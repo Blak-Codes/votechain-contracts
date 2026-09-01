@@ -87,7 +87,7 @@ else:
     content = content[:ins] + entry + content[ins:]
 
 # Update the comparison link for [Unreleased] and add the new release link
-repo = "https://github.com/Vera3289/votechain-contracts"
+repo = "https://github.com/veracindarella/votechain-contracts"
 prev_ver = os.environ.get("CL_PREV_TAG", "").lstrip("v")
 unreleased_link = f"[Unreleased]: {repo}/compare/v{version}...HEAD"
 

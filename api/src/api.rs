@@ -1,5 +1,6 @@
 use axum::{extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, Json};
 use std::sync::{Arc, RwLock};
+use utoipa::OpenApi as _;
 use crate::{ApiDoc, ApiError, Event, Indexer, ProposalDetail, ProposalListParams, ProposalSummary, VoteRecord};
 
 #[derive(Clone)]
@@ -7,6 +8,15 @@ pub struct AppState {
     pub indexer: Arc<RwLock<Indexer>>,
 }
 
+/// List all proposals with optional state filter and pagination.
+#[utoipa::path(
+    get,
+    path = "/proposals",
+    params(ProposalListParams),
+    responses(
+        (status = 200, description = "List of proposals", body = Vec<ProposalSummary>)
+    )
+)]
 pub async fn list_proposals(
     State(state): State<AppState>,
     Query(params): Query<ProposalListParams>,
@@ -18,6 +28,18 @@ pub async fn list_proposals(
     Json(indexer.list_proposals(state_filter, offset, limit))
 }
 
+/// Get a single proposal by ID.
+#[utoipa::path(
+    get,
+    path = "/proposals/{id}",
+    params(
+        ("id" = u64, Path, description = "Proposal ID")
+    ),
+    responses(
+        (status = 200, description = "Proposal detail", body = ProposalDetail),
+        (status = 404, description = "Proposal not found", body = ApiError)
+    )
+)]
 pub async fn get_proposal(
     State(state): State<AppState>,
     Path(id): Path<u64>,
@@ -35,6 +57,18 @@ pub async fn get_proposal(
     }
 }
 
+/// Get all votes for a given proposal.
+#[utoipa::path(
+    get,
+    path = "/proposals/{id}/votes",
+    params(
+        ("id" = u64, Path, description = "Proposal ID")
+    ),
+    responses(
+        (status = 200, description = "List of votes", body = Vec<VoteRecord>),
+        (status = 404, description = "Proposal not found", body = ApiError)
+    )
+)]
 pub async fn get_proposal_votes(
     State(state): State<AppState>,
     Path(id): Path<u64>,
@@ -52,6 +86,17 @@ pub async fn get_proposal_votes(
     Ok(Json(indexer.get_proposal_votes(id)))
 }
 
+/// Get all votes cast by a specific voter address.
+#[utoipa::path(
+    get,
+    path = "/voters/{address}/votes",
+    params(
+        ("address" = String, Path, description = "Stellar address of the voter")
+    ),
+    responses(
+        (status = 200, description = "List of vote records", body = Vec<VoteRecord>)
+    )
+)]
 pub async fn get_voter_votes(
     State(state): State<AppState>,
     Path(address): Path<String>,
@@ -69,6 +114,14 @@ pub async fn ingest_event(
     StatusCode::NO_CONTENT
 }
 
+/// Serve the OpenAPI JSON spec.
+#[utoipa::path(
+    get,
+    path = "/openapi.json",
+    responses(
+        (status = 200, description = "OpenAPI spec")
+    )
+)]
 pub async fn openapi_json() -> Json<utoipa::openapi::OpenApi> {
     Json(ApiDoc::openapi())
 }

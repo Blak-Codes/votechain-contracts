@@ -46,5 +46,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CONTRIBUTING.md` development guide
 - `CHANGELOG.md` following Keep a Changelog format with automated release updates
 
-[Unreleased]: https://github.com/Vera3289/votechain-contracts/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Vera3289/votechain-contracts/releases/tag/v0.1.0
+[Unreleased]: https://github.com/veracindarella/votechain-contracts/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/veracindarella/votechain-contracts/releases/tag/v0.1.0

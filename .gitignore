@@ -5,5 +5,9 @@ target/
 .env.mainnet
 *.wasm
 
+# Node
+node_modules/
+backend/package-lock.json
+
 # Never commit real secrets — use .env.example as the template
 # .env.example is intentionally tracked

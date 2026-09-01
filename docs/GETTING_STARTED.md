@@ -66,7 +66,7 @@ stellar --version
 Clone the VoteChain repository and navigate to the project directory:
 
 ```bash
-git clone https://github.com/Vera3289/votechain-contracts.git
+git clone https://github.com/veracindarella/votechain-contracts.git
 cd votechain-contracts
 ```
 
@@ -406,7 +406,7 @@ votechain-contracts/
 
 ## Getting Help
 
-- **GitHub Issues:** [github.com/Vera3289/votechain-contracts/issues](https://github.com/Vera3289/votechain-contracts/issues)
+- **GitHub Issues:** [github.com/veracindarella/votechain-contracts/issues](https://github.com/veracindarella/votechain-contracts/issues)
 - **Stellar Discord:** [discord.gg/stellar](https://discord.gg/stellar) - #soroban channel
 - **Stellar Docs:** [developers.stellar.org/docs/smart-contracts](https://developers.stellar.org/docs/smart-contracts)
 - **Soroban Examples:** [github.com/stellar/soroban-examples](https://github.com/stellar/soroban-examples)
@@ -418,7 +418,7 @@ Now that you're set up:
 1. Read the [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines
 2. Review the [Architecture Decision Records](adr/README.md) to understand design choices
 3. Check the [FAQ](faq.md) for common questions
-4. Browse [open issues](https://github.com/Vera3289/votechain-contracts/issues) to find something to work on
+4. Browse [open issues](https://github.com/veracindarella/votechain-contracts/issues) to find something to work on
 5. Join the Stellar Discord to connect with the community
 
 Happy coding! 🚀

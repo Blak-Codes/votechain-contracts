@@ -351,7 +351,7 @@ git push origin main
 ```
 
 ### 5. Monitor First Deployment
-- Watch Actions tab: https://github.com/Vera3289/votechain-contracts/actions
+- Watch Actions tab: https://github.com/veracindarella/votechain-contracts/actions
 - Check deployment logs
 - Verify contracts on testnet explorer
 

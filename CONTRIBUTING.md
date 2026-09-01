@@ -23,7 +23,7 @@ Thank you for contributing! VoteChain is an open-source governance protocol buil
 **Prerequisites:** Rust stable toolchain, `wasm32-unknown-unknown` target, and (optionally) Docker.
 
 ```bash
-git clone https://github.com/Vera3289/votechain-contracts.git
+git clone https://github.com/veracindarella/votechain-contracts.git
 cd votechain-contracts
 rustup target add wasm32-unknown-unknown
 make test

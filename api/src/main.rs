@@ -47,16 +47,12 @@ async fn main() {
     let read_routes = Router::new()
         .route("/proposals", get(get_proposals))
         .route("/proposals/{id}", get(get_proposal))
-        .layer(GovernorLayer {
-            config: read_conf,
-        });
+        .layer(GovernorLayer::new(read_conf));
 
     let write_routes = Router::new()
         .route("/proposals", post(create_proposal))
         .route("/proposals/{id}/vote", post(cast_vote))
-        .layer(GovernorLayer {
-            config: write_conf,
-        });
+        .layer(GovernorLayer::new(write_conf));
 
     let app = Router::new().merge(read_routes).merge(write_routes);
 

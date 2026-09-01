@@ -1,7 +1,7 @@
 # VoteChain Contracts
 
-[![CI](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml)
-[![Coverage](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml/badge.svg?job=coverage)](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml)
+[![CI](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml)
+[![Coverage](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml/badge.svg?job=coverage)](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 Soroban smart contracts for **VoteChain** — decentralized on-chain governance and voting on the Stellar blockchain.
@@ -189,7 +189,7 @@ To upgrade to a new pinned version:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Vera3289/votechain-contracts.git
+git clone https://github.com/veracindarella/votechain-contracts.git
 cd votechain-contracts
 
 # Add WASM target
@@ -1514,8 +1514,8 @@ We welcome contributions from the community. Please see [CONTRIBUTING.md](CONTRI
 
 ### Community
 
-- **GitHub Issues** — [Report bugs or request features](https://github.com/Vera3289/votechain-contracts/issues)
-- **GitHub Discussions** — [Ask questions and discuss ideas](https://github.com/Vera3289/votechain-contracts/discussions)
+- **GitHub Issues** — [Report bugs or request features](https://github.com/veracindarella/votechain-contracts/issues)
+- **GitHub Discussions** — [Ask questions and discuss ideas](https://github.com/veracindarella/votechain-contracts/discussions)
 - **Security Reports** — [security@votechain.dev](mailto:security@votechain.dev)
 
 ---

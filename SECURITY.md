@@ -29,7 +29,7 @@ Follow this process instead:
 | Method | Details |
 |--------|---------|
 | Email | **security@votechain.dev** (monitored by maintainers) |
-| GitHub Private Advisory | Use [GitHub Security Advisories](https://github.com/Vera3289/votechain-contracts/security/advisories/new) to report confidentially without email |
+| GitHub Private Advisory | Use [GitHub Security Advisories](https://github.com/veracindarella/votechain-contracts/security/advisories/new) to report confidentially without email |
 
 When reporting, please include:
 

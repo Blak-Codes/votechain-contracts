@@ -91,7 +91,7 @@ pub enum Event {
     },
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ToSchema, IntoParams)]
 pub struct ProposalListParams {
     #[schema(example = 0)]
     pub offset: Option<u64>,
