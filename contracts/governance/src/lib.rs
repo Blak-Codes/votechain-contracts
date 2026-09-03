@@ -19,23 +19,23 @@ mod storage;
 mod types;
 
 #[cfg(test)]
+mod prop_tests;
+#[cfg(test)]
 mod test;
 #[cfg(test)]
 pub mod test_helpers;
-#[cfg(test)]
-mod prop_tests;
 
 use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String};
 use storage::{
-    get_admin, get_contract_state, get_last_proposal, get_min_duration, get_min_proposal_balance,
-    get_proposal_cooldown, get_restrict_admin_vote, get_timelock_duration, get_version,
-    get_voter_snapshot, get_voting_token, has_voted, is_initialized, is_paused, load_proposal,
-    mark_voted, next_id, save_proposal, save_vote_record, save_voter_snapshot, set_admin,
-    set_contract_state, set_last_proposal, set_min_duration, set_max_duration,
-    set_min_proposal_balance, set_paused, set_proposal_cooldown, set_restrict_admin_vote,
-    set_timelock_duration, set_version, set_voting_token, get_vote_record, get_max_duration,
-    set_pending_admin, get_pending_admin, clear_pending_admin,
-    set_admin_transfer_expiry, get_admin_transfer_expiry,
+    clear_pending_admin, get_admin, get_admin_transfer_expiry, get_contract_state,
+    get_last_proposal, get_max_duration, get_min_duration, get_min_proposal_balance,
+    get_pending_admin, get_proposal_cooldown, get_restrict_admin_vote, get_timelock_duration,
+    get_version, get_vote_record, get_voter_snapshot, get_voting_token, has_voted, is_initialized,
+    is_paused, load_proposal, mark_voted, next_id, save_proposal, save_vote_record,
+    save_voter_snapshot, set_admin, set_admin_transfer_expiry, set_contract_state,
+    set_last_proposal, set_max_duration, set_min_duration, set_min_proposal_balance, set_paused,
+    set_pending_admin, set_proposal_cooldown, set_restrict_admin_vote, set_timelock_duration,
+    set_version, set_voting_token,
 };
 use types::{ContractError, ContractState, DataKey, Proposal, ProposalState, Vote, VoteRecord};
 
@@ -339,7 +339,15 @@ impl GovernanceContract {
         }
 
         mark_voted(&env, proposal_id, &voter);
-        save_vote_record(&env, proposal_id, &voter, &VoteRecord { vote_type: vote.clone(), weight });
+        save_vote_record(
+            &env,
+            proposal_id,
+            &voter,
+            &VoteRecord {
+                vote_type: vote.clone(),
+                weight,
+            },
+        );
         save_proposal(&env, &proposal);
         events::vote_cast(&env, proposal_id, &voter, &vote, weight);
         Ok(())
@@ -547,7 +555,11 @@ impl GovernanceContract {
         if get_admin(&env)? != admin {
             return Err(ContractError::NotAdmin);
         }
-        let window = if window_secs == 0 { 172_800 } else { window_secs }; // default 48 h
+        let window = if window_secs == 0 {
+            172_800
+        } else {
+            window_secs
+        }; // default 48 h
         let expiry = env.ledger().timestamp() + window;
         set_pending_admin(&env, &new_admin);
         set_admin_transfer_expiry(&env, expiry);
@@ -650,11 +662,7 @@ impl GovernanceContract {
     }
 
     /// Returns whether an address has already voted on a given proposal.
-    pub fn has_voted(
-        env: Env,
-        proposal_id: u64,
-        voter: Address,
-    ) -> Result<bool, ContractError> {
+    pub fn has_voted(env: Env, proposal_id: u64, voter: Address) -> Result<bool, ContractError> {
         require_non_zero_address(&env, &voter)?;
         load_proposal(&env, proposal_id)?;
         Ok(has_voted(&env, proposal_id, &voter))
@@ -674,7 +682,8 @@ impl GovernanceContract {
     pub fn list_proposals(env: Env, offset: u64, limit: u64) -> soroban_sdk::Vec<Proposal> {
         const MAX_LIMIT: u64 = 50;
 
-        let total = env.storage()
+        let total = env
+            .storage()
             .instance()
             .get(&DataKey::ProposalCount)
             .unwrap_or(0);

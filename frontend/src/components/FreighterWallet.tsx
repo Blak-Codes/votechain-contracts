@@ -3,6 +3,13 @@ import React, { useEffect, useState } from "react";
 const STELLAR_NETWORK = "TESTNET";
 const FREIGHTER_DOWNLOAD = "https://www.freighter.app/";
 
+type FreighterApi = {
+  isConnected: () => Promise<boolean>;
+  getPublicKey: () => Promise<string>;
+  getNetwork: () => Promise<string>;
+  requestAccess: () => Promise<void>;
+};
+
 type WalletState = {
   address: string | null;
   network: string | null;
@@ -24,7 +31,7 @@ export function FreighterWallet() {
 
   // Check if already connected on mount
   useEffect(() => {
-    const freighter = (window as any).freighter;
+    const freighter = (window as unknown as Record<string, unknown>).freighter as FreighterApi | undefined;
     if (!freighter) return;
     freighter.isConnected().then((connected: boolean) => {
       if (connected) {
@@ -38,7 +45,7 @@ export function FreighterWallet() {
   }, []);
 
   async function connect() {
-    const freighter = (window as any).freighter;
+    const freighter = (window as unknown as Record<string, unknown>).freighter as FreighterApi | undefined;
     if (!freighter) {
       setError("Freighter extension not found. Please install it first.");
       return;
@@ -50,8 +57,8 @@ export function FreighterWallet() {
       const address: string = await freighter.getPublicKey();
       const network: string = await freighter.getNetwork();
       setWallet({ address, network, connected: true });
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to connect wallet.");
+    } catch (e: unknown) {
+      setError((e as { message?: string })?.message ?? "Failed to connect wallet.");
     } finally {
       setLoading(false);
     }

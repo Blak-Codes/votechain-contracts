@@ -1,7 +1,15 @@
-use axum::{extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, Json};
+use crate::{
+    ApiDoc, ApiError, Event, Indexer, ProposalDetail, ProposalListParams, ProposalSummary,
+    VoteRecord,
+};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
 use std::sync::{Arc, RwLock};
 use utoipa::OpenApi as _;
-use crate::{ApiDoc, ApiError, Event, Indexer, ProposalDetail, ProposalListParams, ProposalSummary, VoteRecord};
 
 #[derive(Clone)]
 pub struct AppState {

@@ -60,12 +60,12 @@ export function useTransactionStatus() {
           status: "failed",
           error: `Unexpected response: ${res.status}`,
         }));
-      } catch (e: any) {
+      } catch (e: unknown) {
         stopPolling();
         setTx((prev) => ({
           ...prev,
           status: "failed",
-          error: e?.message ?? "Network error while checking transaction.",
+          error: (e as { message?: string })?.message ?? "Network error while checking transaction.",
         }));
       }
     },

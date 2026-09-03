@@ -228,17 +228,11 @@ impl Indexer {
     }
 
     pub fn get_proposal_votes(&self, id: u64) -> Vec<VoteRecord> {
-        self.votes_by_proposal
-            .get(&id)
-            .cloned()
-            .unwrap_or_default()
+        self.votes_by_proposal.get(&id).cloned().unwrap_or_default()
     }
 
     pub fn get_voter_votes(&self, voter: &str) -> Vec<VoteRecord> {
-        self.votes_by_voter
-            .get(voter)
-            .cloned()
-            .unwrap_or_default()
+        self.votes_by_voter.get(voter).cloned().unwrap_or_default()
     }
 }
 
