@@ -2,6 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import './responsive.css'; // issue #12 — mobile-responsive layout
+import './skeleton.css';   // issue #13 — skeleton loading states
 
 if (import.meta.env.DEV) {
   await import('@axe-core/react').then(({ default: axe }) => {
