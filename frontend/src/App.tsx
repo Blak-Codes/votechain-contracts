@@ -1,10 +1,14 @@
-import React from "react";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+import React from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
-// Placeholder page components — replace with real implementations
-const ProposalList = React.lazy(() => import("./pages/ProposalList"));
-const ProposalDetail = React.lazy(() => import("./pages/ProposalDetail"));
-const VotingPanel = React.lazy(() => import("./pages/VotingPanel"));
+/**
+ * Page components — all consume WalletContext / ProposalContext from
+ * providers in main.tsx (issue #10 — no prop-drilling).
+ */
+const ProposalList = React.lazy(() => import('./pages/ProposalList'));
+const ProposalDetail = React.lazy(() => import('./pages/ProposalDetail'));
+const VotingPanel = React.lazy(() => import('./pages/VotingPanel'));
+const VoteHistory = React.lazy(() => import('./pages/VoteHistory'));
 
 export default function App() {
   return (
@@ -24,6 +28,12 @@ export default function App() {
       <ErrorBoundary section="VotingPanel">
         <React.Suspense fallback={<p>Loading…</p>}>
           <VotingPanel />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary section="VoteHistory">
+        <React.Suspense fallback={<p>Loading…</p>}>
+          <VoteHistory />
         </React.Suspense>
       </ErrorBoundary>
     </ErrorBoundary>
