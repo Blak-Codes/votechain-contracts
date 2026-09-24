@@ -356,3 +356,46 @@ pub fn get_admin_transfer_expiry(env: &Env) -> u64 {
         .get(&DataKey::AdminTransferExpiry)
         .unwrap_or(0)
 }
+
+/// Stores the global cap on the number of simultaneously active proposals.
+pub fn set_max_active_proposals(env: &Env, max: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MaxActiveProposals, &max);
+}
+
+/// Returns the global active-proposal cap. Defaults to 50.
+pub fn get_max_active_proposals(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MaxActiveProposals)
+        .unwrap_or(50)
+}
+
+/// Counts the number of proposals that are currently in `Active` state.
+///
+/// Scans all stored proposals up to `proposal_count`.  This is a linear scan
+/// and is suitable for on-chain use given Soroban's execution model, but callers
+/// should be aware of the cost for very large proposal counts.
+pub fn count_active_proposals(env: &Env) -> u64 {
+    let total: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::ProposalCount)
+        .unwrap_or(0);
+
+    use crate::types::ProposalState;
+    let mut active: u64 = 0;
+    for id in 1..=total {
+        if let Some(p) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, crate::types::Proposal>(&DataKey::Proposal(id))
+        {
+            if p.state == ProposalState::Active {
+                active += 1;
+            }
+        }
+    }
+    active
+}

@@ -85,6 +85,8 @@ pub enum ContractError {
     AdminTransferExpired = 32,
     /// 33 – Caller is not the pending admin
     NotPendingAdmin = 33,
+    /// 34 – The global active proposal cap has been reached
+    TooManyActiveProposals = 34,
 }
 
 /// Lifecycle state of the governance contract itself.
@@ -253,6 +255,10 @@ pub enum DataKey {
 
     /// Unix timestamp after which the pending admin nomination expires (instance storage).
     AdminTransferExpiry,
+
+    /// Maximum number of simultaneously active proposals allowed globally (instance storage).
+    /// Defaults to 50 when not explicitly set.
+    MaxActiveProposals,
 }
 
 #[contracttype]

@@ -27,15 +27,16 @@ pub mod test_helpers;
 
 use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String};
 use storage::{
-    clear_pending_admin, get_admin, get_admin_transfer_expiry, get_contract_state,
-    get_last_proposal, get_max_duration, get_min_duration, get_min_proposal_balance,
-    get_pending_admin, get_proposal_cooldown, get_restrict_admin_vote, get_timelock_duration,
-    get_version, get_vote_record, get_voter_snapshot, get_voting_token, has_voted, is_initialized,
-    is_paused, load_proposal, mark_voted, next_id, save_proposal, save_vote_record,
-    save_voter_snapshot, set_admin, set_admin_transfer_expiry, set_contract_state,
-    set_last_proposal, set_max_duration, set_min_duration, set_min_proposal_balance, set_paused,
-    set_pending_admin, set_proposal_cooldown, set_restrict_admin_vote, set_timelock_duration,
-    set_version, set_voting_token,
+    clear_pending_admin, count_active_proposals, get_admin, get_admin_transfer_expiry,
+    get_contract_state, get_last_proposal, get_max_active_proposals, get_max_duration,
+    get_min_duration, get_min_proposal_balance, get_pending_admin, get_proposal_cooldown,
+    get_restrict_admin_vote, get_timelock_duration, get_version, get_vote_record,
+    get_voter_snapshot, get_voting_token, has_voted, is_initialized, is_paused, load_proposal,
+    mark_voted, next_id, save_proposal, save_vote_record, save_voter_snapshot, set_admin,
+    set_admin_transfer_expiry, set_contract_state, set_last_proposal, set_max_active_proposals,
+    set_max_duration, set_min_duration, set_min_proposal_balance, set_paused, set_pending_admin,
+    set_proposal_cooldown, set_restrict_admin_vote, set_timelock_duration, set_version,
+    set_voting_token,
 };
 use types::{ContractError, ContractState, DataKey, Proposal, ProposalState, Vote, VoteRecord};
 
@@ -99,6 +100,8 @@ impl GovernanceContract {
     ///   they created, preventing a conflict of interest.
     /// - `timelock_duration`: mandatory delay in seconds between a proposal passing and it
     ///   becoming executable. Use `0` to disable the timelock.
+    /// - `max_active_proposals`: global cap on the number of simultaneously active proposals.
+    ///   `0` means use the default of 50. Set to a non-zero value to override.
     ///
     /// # Errors
     /// - [`ContractError::AlreadyInitialized`] if the contract has already been initialised.
@@ -113,6 +116,7 @@ impl GovernanceContract {
         max_duration: u64,
         restrict_admin_vote: bool,
         timelock_duration: u64,
+        max_active_proposals: u64,
     ) -> Result<(), ContractError> {
         // SEC-005: auth is the first operation in every privileged function.
         admin.require_auth();
@@ -136,6 +140,10 @@ impl GovernanceContract {
         if timelock_duration > 0 {
             set_timelock_duration(&env, timelock_duration);
         }
+        // A value of 0 means "use default (50)"; non-zero values are stored explicitly.
+        if max_active_proposals > 0 {
+            set_max_active_proposals(&env, max_active_proposals);
+        }
         set_version(&env, (1, 0, 0));
         set_contract_state(&env, &ContractState::Ready);
         events::contract_initialized(&env, &admin);
@@ -156,6 +164,7 @@ impl GovernanceContract {
     /// - [`ContractError::InvalidDurationRange`] if `duration` is outside the configured [min_duration, max_duration] range.
     /// - [`ContractError::InsufficientBalance`] if proposer balance is below minimum.
     /// - [`ContractError::ProposalCooldown`] if proposer is within cooldown period.
+    /// - [`ContractError::TooManyActiveProposals`] if the global active-proposal cap has been reached.
     /// - [`ContractError::ProposalCountOverflow`] if the proposal ID counter would overflow.
     pub fn create_proposal(
         env: Env,
@@ -227,6 +236,11 @@ impl GovernanceContract {
         }
 
         let now = env.ledger().timestamp();
+        // Check global active-proposal cap before allocating a new ID.
+        let max_active = get_max_active_proposals(&env);
+        if count_active_proposals(&env) >= max_active {
+            return Err(ContractError::TooManyActiveProposals);
+        }
         // SEC-007: ID is generated contract-side only; checked_add prevents overflow.
         let id = next_id(&env)?;
         let proposal = Proposal {
@@ -500,6 +514,42 @@ impl GovernanceContract {
         save_proposal(&env, &proposal);
         events::quorum_updated(&env, proposal_id, new_quorum);
         Ok(())
+    }
+
+    /// Updates the global cap on the maximum number of simultaneously active proposals.
+    ///
+    /// Only the admin may call this. The new cap applies immediately to the next
+    /// `create_proposal` call; existing active proposals are unaffected.
+    ///
+    /// # Errors
+    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
+    /// - [`ContractError::InvalidAddress`] if `admin` is the zero address.
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    pub fn update_max_proposals(
+        env: Env,
+        admin: Address,
+        new_max: u64,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        require_non_zero_address(&env, &admin)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        if get_admin(&env)? != admin {
+            return Err(ContractError::NotAdmin);
+        }
+        // A cap of 0 would permanently block all new proposals, which is almost certainly a
+        // mistake.  Require at least 1.
+        if new_max == 0 {
+            return Err(ContractError::InvalidQuorum); // reuse closest error; dedicated error TBD
+        }
+        set_max_active_proposals(&env, new_max);
+        Ok(())
+    }
+
+    /// Returns the current global cap on active proposals.
+    pub fn get_max_active_proposals(env: Env) -> u64 {
+        storage::get_max_active_proposals(&env)
     }
 
     /// Transfers admin rights to a new address. Only the current admin may call this.
