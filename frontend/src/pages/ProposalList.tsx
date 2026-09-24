@@ -1,6 +1,19 @@
 import React from "react";
+import { sampleProposals } from "../data";
+import ProposalListComponent from "../components/ProposalList";
 
-// Placeholder — replace with full implementation
+/**
+ * Route: /proposals
+ *
+ * Lists all governance proposals. Uses the shared ProposalList component
+ * which renders proposal cards that link to /proposals/:id.
+ *
+ * Data will be replaced with a live fetch in issue #9.
+ */
 export default function ProposalList() {
-  return <div>Proposal List</div>;
+  return (
+    <main>
+      <ProposalListComponent proposals={sampleProposals} />
+    </main>
+  );
 }

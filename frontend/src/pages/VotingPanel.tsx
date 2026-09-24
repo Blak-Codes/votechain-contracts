@@ -1,6 +1,15 @@
 import React from "react";
 
-// Placeholder — replace with full implementation
+/**
+ * Route: /vote
+ *
+ * Voting panel — full implementation is a separate work item.
+ */
 export default function VotingPanel() {
-  return <div>Voting Panel</div>;
+  return (
+    <main>
+      <h1>Voting Panel</h1>
+      <p>Connect your Freighter wallet and select a proposal to cast your vote.</p>
+    </main>
+  );
 }
