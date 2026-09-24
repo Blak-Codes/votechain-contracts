@@ -25,19 +25,24 @@ mod test;
 #[cfg(test)]
 pub mod test_helpers;
 
-use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String};
+use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String, Vec};
 use storage::{
     clear_pending_admin, get_admin, get_admin_transfer_expiry, get_contract_state,
     get_last_proposal, get_max_duration, get_min_duration, get_min_proposal_balance,
-    get_pending_admin, get_proposal_cooldown, get_restrict_admin_vote, get_timelock_duration,
-    get_version, get_vote_record, get_voter_snapshot, get_voting_token, has_voted, is_initialized,
-    is_paused, load_proposal, mark_voted, next_id, save_proposal, save_vote_record,
-    save_voter_snapshot, set_admin, set_admin_transfer_expiry, set_contract_state,
-    set_last_proposal, set_max_duration, set_min_duration, set_min_proposal_balance, set_paused,
-    set_pending_admin, set_proposal_cooldown, set_restrict_admin_vote, set_timelock_duration,
-    set_version, set_voting_token,
+    get_multisig_admins, get_multisig_threshold, get_pending_action, get_pending_admin,
+    get_proposal_cooldown, get_restrict_admin_vote, get_timelock_duration, get_version,
+    get_vote_record, get_voter_snapshot, get_voting_token, has_voted, is_initialized, is_multisig,
+    is_paused, load_proposal, mark_voted, next_action_id, next_id, remove_pending_action,
+    save_pending_action, save_proposal, save_vote_record, save_voter_snapshot, set_admin,
+    set_admin_transfer_expiry, set_contract_state, set_last_proposal, set_max_duration,
+    set_min_duration, set_min_proposal_balance, set_multisig_admins, set_multisig_threshold,
+    set_paused, set_pending_admin, set_proposal_cooldown, set_restrict_admin_vote,
+    set_timelock_duration, set_version, set_voting_token,
 };
-use types::{ContractError, ContractState, DataKey, Proposal, ProposalState, Vote, VoteRecord};
+use types::{
+    ContractError, ContractState, DataKey, MultisigAction, PendingMultisigAction, Proposal,
+    ProposalState, Vote, VoteRecord,
+};
 
 const MAX_TITLE_LEN: u32 = 128;
 const MAX_DESC_LEN: u32 = 1024;
@@ -704,5 +709,271 @@ impl GovernanceContract {
         }
 
         proposals
+    }
+
+    // =========================================================================
+    // Multi-sig admin (ADR-007)
+    // =========================================================================
+    //
+    // The multi-sig path is an opt-in alternative to the single-admin path.
+    // Use `initialize_multisig` instead of `initialize` to enable it.
+    // All existing single-admin functions remain unchanged for backwards
+    // compatibility with existing deployments.
+    //
+    // IMPLEMENTATION STATUS: scaffold / work-in-progress
+    // The storage layer and types are complete.  The business logic below
+    // (two-phase commit, expiry enforcement, action dispatch) is stubbed with
+    // TODO markers for the full implementation tracked in issue #57.
+    // =========================================================================
+
+    /// Initialises the governance contract in multi-sig mode.
+    ///
+    /// Unlike `initialize`, this variant registers N co-signer addresses and an
+    /// M-of-N threshold.  All N admins must authorise this call.
+    ///
+    /// # Parameters
+    /// - `admins`    — Vec of co-signer addresses (1–10 members).
+    /// - `threshold` — Number of co-signers required to approve any admin action.
+    ///                 Must satisfy `1 <= threshold <= admins.len()`.
+    ///
+    /// # Errors
+    /// - [`ContractError::AlreadyInitialized`] if the contract is already initialised.
+    /// - [`ContractError::InvalidAdminSet`] if `admins` is empty or has more than 10 members.
+    /// - [`ContractError::InvalidThreshold`] if `threshold` is 0 or > `admins.len()`.
+    /// - [`ContractError::InvalidAddress`] if any address in `admins` is the zero address.
+    pub fn initialize_multisig(
+        env: Env,
+        admins: Vec<Address>,
+        threshold: u32,
+        voting_token: Address,
+        min_proposal_balance: i128,
+        proposal_cooldown: u64,
+        min_duration: u64,
+        max_duration: u64,
+        restrict_admin_vote: bool,
+        timelock_duration: u64,
+    ) -> Result<(), ContractError> {
+        // All co-signers must authorise the initialisation call.
+        for i in 0..admins.len() {
+            admins.get(i).unwrap().require_auth();
+        }
+
+        if is_initialized(&env) {
+            return Err(ContractError::AlreadyInitialized);
+        }
+
+        let n = admins.len();
+        if n == 0 || n > 10 {
+            return Err(ContractError::InvalidAdminSet);
+        }
+        if threshold == 0 || threshold > n {
+            return Err(ContractError::InvalidThreshold);
+        }
+
+        for i in 0..n {
+            require_non_zero_address(&env, &admins.get(i).unwrap())?;
+        }
+        require_non_zero_address(&env, &voting_token)?;
+
+        // Store a sentinel admin (first co-signer) for compatibility with
+        // single-admin storage reads. Multi-sig checks use MultisigAdmins.
+        set_admin(&env, &admins.get(0).unwrap());
+        set_multisig_admins(&env, &admins);
+        set_multisig_threshold(&env, threshold);
+        set_voting_token(&env, &voting_token);
+        if min_proposal_balance > 0 {
+            set_min_proposal_balance(&env, min_proposal_balance);
+        }
+        if proposal_cooldown > 0 {
+            set_proposal_cooldown(&env, proposal_cooldown);
+        }
+        set_min_duration(&env, min_duration);
+        set_max_duration(&env, max_duration);
+        set_restrict_admin_vote(&env, restrict_admin_vote);
+        if timelock_duration > 0 {
+            set_timelock_duration(&env, timelock_duration);
+        }
+        set_version(&env, (1, 0, 0));
+        set_contract_state(&env, &ContractState::Ready);
+
+        // TODO(#57): emit multisig_initialized event with admin set and threshold.
+        Ok(())
+    }
+
+    /// Proposes a multi-sig admin action.
+    ///
+    /// The caller must be a registered co-signer.  Their approval is
+    /// automatically counted.  Returns the action ID that other co-signers
+    /// use to cast their approvals.
+    ///
+    /// The pending action is stored in **temporary storage** with a 7-day expiry.
+    ///
+    /// # Errors
+    /// - [`ContractError::NotMultisigAdmin`] if the caller is not a co-signer.
+    /// - [`ContractError::MultisigRequired`] if the contract is not in multi-sig mode.
+    pub fn propose_multisig_action(
+        env: Env,
+        proposer: Address,
+        action: MultisigAction,
+    ) -> Result<u64, ContractError> {
+        proposer.require_auth();
+
+        if !is_multisig(&env) {
+            return Err(ContractError::MultisigRequired);
+        }
+
+        // Verify proposer is in the admin set.
+        let admins = get_multisig_admins(&env).ok_or(ContractError::NotMultisigAdmin)?;
+        if !admins.contains(&proposer) {
+            return Err(ContractError::NotMultisigAdmin);
+        }
+
+        let action_id = next_action_id(&env)?;
+        let mut approvals = Vec::new(&env);
+        approvals.push_back(proposer.clone());
+
+        // TODO(#57): derive expiry from configurable TTL (default 7 days).
+        let expires_at = env.ledger().timestamp() + 604_800;
+
+        save_pending_action(
+            &env,
+            action_id,
+            &PendingMultisigAction {
+                action,
+                approvals,
+                expires_at,
+            },
+        );
+
+        // TODO(#57): emit action_proposed event.
+        Ok(action_id)
+    }
+
+    /// Approves a pending multi-sig action.
+    ///
+    /// Once the number of distinct approvals reaches the configured threshold,
+    /// any co-signer may call `execute_multisig_action` to dispatch the action.
+    ///
+    /// # Errors
+    /// - [`ContractError::NotMultisigAdmin`] if the caller is not a co-signer.
+    /// - [`ContractError::PendingActionNotFound`] if the action does not exist or has expired.
+    /// - [`ContractError::AlreadyApproved`] if the caller has already approved.
+    pub fn approve_multisig_action(
+        env: Env,
+        approver: Address,
+        action_id: u64,
+    ) -> Result<(), ContractError> {
+        approver.require_auth();
+
+        if !is_multisig(&env) {
+            return Err(ContractError::MultisigRequired);
+        }
+
+        let admins = get_multisig_admins(&env).ok_or(ContractError::NotMultisigAdmin)?;
+        if !admins.contains(&approver) {
+            return Err(ContractError::NotMultisigAdmin);
+        }
+
+        let mut pending =
+            get_pending_action(&env, action_id).ok_or(ContractError::PendingActionNotFound)?;
+
+        // Check expiry.
+        if env.ledger().timestamp() > pending.expires_at {
+            remove_pending_action(&env, action_id);
+            return Err(ContractError::PendingActionNotFound);
+        }
+
+        if pending.approvals.contains(&approver) {
+            return Err(ContractError::AlreadyApproved);
+        }
+
+        pending.approvals.push_back(approver.clone());
+        save_pending_action(&env, action_id, &pending);
+
+        // TODO(#57): emit action_approved event.
+        Ok(())
+    }
+
+    /// Executes a pending multi-sig action once the approval threshold is met.
+    ///
+    /// Any co-signer may call this once the action has enough approvals.
+    ///
+    /// # Errors
+    /// - [`ContractError::NotMultisigAdmin`] if the caller is not a co-signer.
+    /// - [`ContractError::PendingActionNotFound`] if the action does not exist or has expired.
+    /// - [`ContractError::InsufficientApprovals`] if the threshold has not been reached.
+    pub fn execute_multisig_action(
+        env: Env,
+        executor: Address,
+        action_id: u64,
+    ) -> Result<(), ContractError> {
+        executor.require_auth();
+
+        if !is_multisig(&env) {
+            return Err(ContractError::MultisigRequired);
+        }
+
+        let admins = get_multisig_admins(&env).ok_or(ContractError::NotMultisigAdmin)?;
+        if !admins.contains(&executor) {
+            return Err(ContractError::NotMultisigAdmin);
+        }
+
+        let pending =
+            get_pending_action(&env, action_id).ok_or(ContractError::PendingActionNotFound)?;
+
+        if env.ledger().timestamp() > pending.expires_at {
+            remove_pending_action(&env, action_id);
+            return Err(ContractError::PendingActionNotFound);
+        }
+
+        let threshold = get_multisig_threshold(&env);
+        if pending.approvals.len() < threshold {
+            return Err(ContractError::InsufficientApprovals);
+        }
+
+        // Dispatch the approved action.
+        // TODO(#57): implement the full dispatch for all MultisigAction variants.
+        match pending.action {
+            MultisigAction::AdminExecute(_proposal_id) => {
+                // TODO(#57): call the execute logic (currently requires single admin).
+                // This will be wired to a shared internal helper extracted from `execute`.
+            }
+            MultisigAction::AdminCancel(_proposal_id) => {
+                // TODO(#57): call the cancel logic.
+            }
+            MultisigAction::AdminPause => {
+                set_paused(&env, true);
+            }
+            MultisigAction::AdminUnpause => {
+                set_paused(&env, false);
+            }
+            MultisigAction::AdminUpdateQuorum(_proposal_id, _new_quorum) => {
+                // TODO(#57): update quorum on the proposal.
+            }
+            MultisigAction::AdminTransfer(new_admins) => {
+                set_multisig_admins(&env, &new_admins);
+                set_admin(&env, &new_admins.get(0).unwrap());
+                // TODO(#57): emit admin_transfer event.
+            }
+        }
+
+        remove_pending_action(&env, action_id);
+        // TODO(#57): emit action_executed event.
+        Ok(())
+    }
+
+    /// Returns whether the contract is operating in multi-sig mode.
+    pub fn is_multisig_mode(env: Env) -> bool {
+        is_multisig(&env)
+    }
+
+    /// Returns the multi-sig co-signer addresses, or an empty Vec if not in multi-sig mode.
+    pub fn get_multisig_admins(env: Env) -> Vec<Address> {
+        storage::get_multisig_admins(&env).unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Returns the multi-sig approval threshold.
+    pub fn get_multisig_threshold(env: Env) -> u32 {
+        storage::get_multisig_threshold(&env)
     }
 }

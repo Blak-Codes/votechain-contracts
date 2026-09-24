@@ -37,8 +37,8 @@
 //! Because the discriminant is part of the serialised key, these can never
 //! collide even when called with identical arguments.
 
-use crate::types::{ContractError, ContractState, DataKey, Proposal, VoteRecord};
-use soroban_sdk::{Address, Env};
+use crate::types::{ContractError, ContractState, DataKey, PendingMultisigAction, Proposal, VoteRecord};
+use soroban_sdk::{Address, Env, Vec};
 
 // =============================================================================
 // Storage Strategy
@@ -355,4 +355,81 @@ pub fn get_admin_transfer_expiry(env: &Env) -> u64 {
         .instance()
         .get(&DataKey::AdminTransferExpiry)
         .unwrap_or(0)
+}
+
+// =============================================================================
+// Multi-sig storage accessors (ADR-007)
+// =============================================================================
+
+/// Stores the multi-sig co-signer address list.
+pub fn set_multisig_admins(env: &Env, admins: &Vec<Address>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MultisigAdmins, admins);
+}
+
+/// Returns the multi-sig co-signer list, or `None` if the contract was not
+/// initialised with `initialize_multisig`.
+pub fn get_multisig_admins(env: &Env) -> Option<Vec<Address>> {
+    env.storage().instance().get(&DataKey::MultisigAdmins)
+}
+
+/// Returns `true` if the contract was initialised with `initialize_multisig`.
+pub fn is_multisig(env: &Env) -> bool {
+    env.storage().instance().has(&DataKey::MultisigAdmins)
+}
+
+/// Stores the M-of-N threshold for multi-sig operations.
+pub fn set_multisig_threshold(env: &Env, threshold: u32) {
+    env.storage()
+        .instance()
+        .set(&DataKey::MultisigThreshold, &threshold);
+}
+
+/// Returns the configured multi-sig threshold. Defaults to `1`.
+pub fn get_multisig_threshold(env: &Env) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::MultisigThreshold)
+        .unwrap_or(1)
+}
+
+/// Allocates and returns the next pending action ID.
+///
+/// # Errors
+/// - [`ContractError::ProposalCountOverflow`] (reused) if the counter would wrap.
+pub fn next_action_id(env: &Env) -> Result<u64, ContractError> {
+    let current: u64 = env
+        .storage()
+        .instance()
+        .get(&DataKey::PendingActionCount)
+        .unwrap_or(0);
+    let n = current
+        .checked_add(1)
+        .ok_or(ContractError::ProposalCountOverflow)?;
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingActionCount, &n);
+    Ok(n)
+}
+
+/// Stores a pending multi-sig action in temporary storage.
+pub fn save_pending_action(env: &Env, id: u64, action: &PendingMultisigAction) {
+    env.storage()
+        .temporary()
+        .set(&DataKey::PendingAction(id), action);
+}
+
+/// Returns the pending multi-sig action for `id`, or `None` if expired/not found.
+pub fn get_pending_action(env: &Env, id: u64) -> Option<PendingMultisigAction> {
+    env.storage()
+        .temporary()
+        .get(&DataKey::PendingAction(id))
+}
+
+/// Removes a pending multi-sig action from temporary storage after execution.
+pub fn remove_pending_action(env: &Env, id: u64) {
+    env.storage()
+        .temporary()
+        .remove(&DataKey::PendingAction(id));
 }

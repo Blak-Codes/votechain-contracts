@@ -85,6 +85,20 @@ pub enum ContractError {
     AdminTransferExpired = 32,
     /// 33 – Caller is not the pending admin
     NotPendingAdmin = 33,
+    /// 34 – Multi-sig is required for this operation; use propose_multisig_action
+    MultisigRequired = 34,
+    /// 35 – Threshold must be between 1 and the number of admins
+    InvalidThreshold = 35,
+    /// 36 – Admin set must have between 1 and 10 members
+    InvalidAdminSet = 36,
+    /// 37 – Pending action does not exist or has expired
+    PendingActionNotFound = 37,
+    /// 38 – Caller has already approved this pending action
+    AlreadyApproved = 38,
+    /// 39 – Pending action does not have enough approvals yet
+    InsufficientApprovals = 39,
+    /// 40 – Caller is not a member of the multi-sig admin set
+    NotMultisigAdmin = 40,
 }
 
 /// Lifecycle state of the governance contract itself.
@@ -137,7 +151,38 @@ pub struct Proposal {
     pub execute_after: u64,
 }
 
-/// Storage key enum for the governance contract.
+/// Pending multi-sig action types.
+///
+/// Each variant represents a privileged admin operation that requires
+/// M-of-N co-signer approval before it is executed on-chain.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum MultisigAction {
+    /// Mark a passed proposal as executed.
+    AdminExecute(u64),
+    /// Cancel an active proposal.
+    AdminCancel(u64),
+    /// Pause the contract.
+    AdminPause,
+    /// Unpause the contract.
+    AdminUnpause,
+    /// Update the quorum threshold on an active proposal.
+    AdminUpdateQuorum(u64, i128),
+    /// Transfer the admin set to a new set of addresses.
+    AdminTransfer(soroban_sdk::Vec<Address>),
+}
+
+/// Stored record of a pending multi-sig action and its current approvals.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PendingMultisigAction {
+    /// The action to be executed once the threshold is reached.
+    pub action: MultisigAction,
+    /// Addresses that have already approved this action.
+    pub approvals: soroban_sdk::Vec<Address>,
+    /// Unix timestamp after which this action expires.
+    pub expires_at: u64,
+}
 ///
 /// Every storage entry is keyed by a variant of this enum.  Because Soroban
 /// serialises the variant discriminant as part of the XDR key, each variant
@@ -253,6 +298,20 @@ pub enum DataKey {
 
     /// Unix timestamp after which the pending admin nomination expires (instance storage).
     AdminTransferExpiry,
+
+    /// Vec<Address> of multi-sig co-signer addresses (instance storage).
+    /// Only set when the contract was initialised with `initialize_multisig`.
+    MultisigAdmins,
+
+    /// M-of-N threshold for multi-sig admin operations (instance storage).
+    MultisigThreshold,
+
+    /// Pending multi-sig action keyed by action ID (temporary storage).
+    /// Expires naturally with ledger entry TTL.
+    PendingAction(u64),
+
+    /// Counter for pending action IDs (instance storage).
+    PendingActionCount,
 }
 
 #[contracttype]
