@@ -40,3 +40,43 @@ All `ContractError` codes returned by VoteChain smart contracts as `u32` values.
 - Error codes are scoped per contract — code `1` in the governance contract and code `1` in the token contract are independent.
 - Errors are returned as `Result::Err(ContractError)` and surface as a `u32` in Soroban host diagnostics.
 - Use `get_proposal(proposal_id)` and `has_voted(proposal_id, voter)` as pre-flight checks to avoid the most common errors.
+
+---
+
+## Backend API Errors
+
+The Node.js backend returns structured JSON error responses for invalid requests.
+
+### VALIDATION_ERROR
+
+**HTTP status:** `400 Bad Request`
+
+**When returned:** The request body fails schema validation (missing required fields, values out of range, wrong types, etc.).
+
+**Response shape:**
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "fields": [
+      { "field": "title",    "message": "title must be at least 1 character" },
+      { "field": "duration", "message": "duration must be at least 60 seconds" }
+    ]
+  }
+}
+```
+
+**Field-level constraints validated:**
+
+| Endpoint | Field | Constraint |
+|----------|-------|------------|
+| `POST /proposals` | `title` | 1–128 characters |
+| `POST /proposals` | `description` | 1–1 024 characters |
+| `POST /proposals` | `quorum` | Positive integer |
+| `POST /proposals` | `duration` | 60–2 592 000 seconds |
+| `POST /proposals/:id/vote` | `proposal_id` | Positive integer |
+| `POST /proposals/:id/vote` | `vote` | One of `"Yes"`, `"No"`, `"Abstain"` |
+| `POST /proposals/:id/vote` | `voter` | 56-character Stellar address starting with `G` |
+
+**Resolution:** Correct the identified fields and retry the request.

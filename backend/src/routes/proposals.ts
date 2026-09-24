@@ -1,5 +1,5 @@
 /**
- * Proposal routes with Redis caching applied.
+ * Proposal routes with Redis caching and zod request validation applied.
  * Replace the stub handlers with real Stellar RPC / indexer calls.
  */
 
@@ -10,6 +10,13 @@ import {
   getCacheMetrics,
   invalidateProposalCache,
 } from "../middleware/redisCache";
+import {
+  validateBody,
+  createProposalSchema,
+  castVoteSchema,
+  type CreateProposalBody,
+  type CastVoteBody,
+} from "../middleware/validation";
 
 const router = Router();
 
@@ -26,6 +33,28 @@ router.get("/proposals/:id", cacheProposalItem, async (req: Request, res: Respon
   // TODO: fetch single proposal from Stellar RPC / indexer
   res.json({ id });
 });
+
+// POST /proposals — validated, then forwarded to Stellar RPC / indexer
+router.post(
+  "/proposals",
+  validateBody(createProposalSchema),
+  async (req: Request, res: Response) => {
+    const body = req.body as CreateProposalBody;
+    // TODO: call Stellar RPC to create proposal on-chain
+    res.status(201).json({ ok: true, received: body });
+  }
+);
+
+// POST /proposals/:id/vote — validated, then forwarded to Stellar RPC / indexer
+router.post(
+  "/proposals/:id/vote",
+  validateBody(castVoteSchema),
+  async (req: Request, res: Response) => {
+    const body = req.body as CastVoteBody;
+    // TODO: call Stellar RPC to cast vote on-chain
+    res.status(200).json({ ok: true, received: body });
+  }
+);
 
 // POST /proposals/invalidate — called by the event indexer on new on-chain events
 router.post("/proposals/invalidate", async (req: Request, res: Response) => {
