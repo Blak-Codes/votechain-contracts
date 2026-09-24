@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import './responsive.css'; // issue #12 — mobile-responsive layout
 
 if (import.meta.env.DEV) {
   await import('@axe-core/react').then(({ default: axe }) => {
