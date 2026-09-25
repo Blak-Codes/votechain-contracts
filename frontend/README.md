@@ -61,3 +61,14 @@ In `src/proposals.js`, replace the `MOCK_PROPOSALS` array with a real fetch from
 - `aria-label` on all interactive and informational elements
 - Fully keyboard navigable
 - Respects `prefers-reduced-motion`
+
+## Internationalisation
+
+The React application uses `react-i18next` with the English catalog at
+`src/locales/en.json`. The browser language is detected from
+`navigator.language`; English is the fallback for unsupported languages.
+
+To add a locale, create another JSON file in `src/locales`, add it to the
+`resources` map in `src/i18n.ts`, and include its language code in the
+supported-language selection. Use the existing translation keys in components
+with `useTranslation()` rather than adding visible strings directly to JSX.
