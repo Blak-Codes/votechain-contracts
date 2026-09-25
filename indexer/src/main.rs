@@ -233,11 +233,20 @@ async fn main() -> Result<()> {
         .await
         .context("connect to postgres")?;
 
-    // Run migrations
-    sqlx::raw_sql(include_str!("../migrations/001_init.sql"))
-        .execute(&pool)
+    // Run database migrations using sqlx's built-in migration runner.
+    //
+    // sqlx::migrate!() embeds all *.sql files from the migrations/ directory
+    // at compile time, tracks which have been applied in the _sqlx_migrations
+    // table, and applies only unapplied migrations in version order.  This
+    // replaces the previous sqlx::raw_sql approach which re-executed the full
+    // schema on every startup and could not handle incremental schema changes
+    // without data loss risk.
+    sqlx::migrate!("./migrations")
+        .run(&pool)
         .await
-        .context("run migrations")?;
+        .context("run database migrations")?;
+
+    info!("database migrations applied successfully");
 
     // Spawn ingestion loop
     let ingest_pool = pool.clone();
