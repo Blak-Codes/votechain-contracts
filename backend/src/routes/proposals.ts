@@ -13,11 +13,36 @@ import {
 
 const router = Router();
 
+const VALID_STATES = new Set(["active", "passed", "rejected", "executed", "cancelled"]);
+
 // GET /proposals — cached 30 s
-router.get("/proposals", cacheProposalList, async (_req: Request, res: Response) => {
+router.get("/proposals", cacheProposalList, async (req: Request, res: Response) => {
   // TODO: fetch from Stellar RPC / indexer
   const proposals: unknown[] = [];
-  res.json(proposals);
+  const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+  const limit = Math.min(
+    50,
+    Math.max(1, Number.parseInt(String(req.query.limit ?? "10"), 10) || 10),
+  );
+  const state = typeof req.query.state === "string" ? req.query.state : undefined;
+  if (state && !VALID_STATES.has(state)) {
+    return res.status(400).json({ error: "Invalid proposal state" });
+  }
+
+  const after = typeof req.query.after === "string" ? req.query.after : undefined;
+  const offset = (page - 1) * limit;
+  const data = proposals.slice(offset, offset + limit);
+  res.json({
+    data,
+    pagination: {
+      page,
+      limit,
+      total: proposals.length,
+      hasMore: offset + data.length < proposals.length,
+      ...(after ? { after } : {}),
+      ...(state ? { state } : {}),
+    },
+  });
 });
 
 // GET /proposals/:id — cached 10 s
