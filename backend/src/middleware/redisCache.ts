@@ -16,6 +16,10 @@ import { Request, Response, NextFunction } from "express";
 
 let redis: RedisClientType;
 
+export function getRedis() {
+  return redis;
+}
+
 export async function connectRedis(url = process.env.REDIS_URL ?? "redis://localhost:6379") {
   redis = createClient({ url }) as RedisClientType;
   redis.on("error", (err) => console.error("[redis] error:", err));
