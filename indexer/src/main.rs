@@ -10,7 +10,7 @@ use tokio::{net::TcpListener, time::sleep};
 use tracing::{error, info, warn};
 
 // ---------------------------------------------------------------------------
-// Config
+// Config & environment variable validation
 // ---------------------------------------------------------------------------
 
 struct Config {
@@ -20,13 +20,53 @@ struct Config {
     poll_interval: Duration,
 }
 
+/// Required environment variables that must be set before the indexer starts.
+const REQUIRED_ENV_VARS: &[(&str, &str)] = &[
+    ("DATABASE_URL", "PostgreSQL connection string, e.g. postgres://user:pass@localhost/votechain"),
+    ("CONTRACT_ID", "Deployed VoteChain governance contract address (C...)"),
+];
+
+/// Validates all required environment variables up-front and returns a
+/// descriptive error listing every missing variable, rather than failing on
+/// the first missing one with a cryptic message.
+///
+/// # Errors
+/// Returns an error if any required variable is absent or empty, with a
+/// human-readable list of what is missing and where to find reference values.
+fn validate_env() -> Result<()> {
+    let missing: Vec<(&str, &str)> = REQUIRED_ENV_VARS
+        .iter()
+        .filter(|(key, _)| env::var(key).map(|v| v.is_empty()).unwrap_or(true))
+        .cloned()
+        .collect();
+
+    if !missing.is_empty() {
+        let details = missing
+            .iter()
+            .map(|(key, desc)| format!("  • {key}\n      {desc}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        anyhow::bail!(
+            "Indexer startup failed — missing required environment variables:\n\n\
+             {details}\n\n\
+             Set these variables before starting the indexer.\n\
+             See .env.example for reference values."
+        );
+    }
+    Ok(())
+}
+
 impl Config {
     fn from_env() -> Result<Self> {
+        // Validate all required vars first so the operator sees every missing
+        // variable in a single error, not one at a time.
+        validate_env()?;
+
         Ok(Self {
-            database_url: env::var("DATABASE_URL").context("DATABASE_URL")?,
+            database_url: env::var("DATABASE_URL").context("DATABASE_URL must be set")?,
             horizon_url: env::var("HORIZON_URL")
                 .unwrap_or_else(|_| "https://horizon-testnet.stellar.org".into()),
-            contract_id: env::var("CONTRACT_ID").context("CONTRACT_ID")?,
+            contract_id: env::var("CONTRACT_ID").context("CONTRACT_ID must be set")?,
             poll_interval: Duration::from_secs(
                 env::var("POLL_INTERVAL_SECS")
                     .ok()
