@@ -10,7 +10,7 @@ use tokio::{net::TcpListener, time::sleep};
 use tracing::{error, info, warn};
 
 // ---------------------------------------------------------------------------
-// Config
+// Config & environment variable validation
 // ---------------------------------------------------------------------------
 
 struct Config {
@@ -18,21 +18,63 @@ struct Config {
     horizon_url: String,
     contract_id: String,
     poll_interval: Duration,
+    backend_url: Option<String>,
+}
+
+/// Required environment variables that must be set before the indexer starts.
+const REQUIRED_ENV_VARS: &[(&str, &str)] = &[
+    ("DATABASE_URL", "PostgreSQL connection string, e.g. postgres://user:pass@localhost/votechain"),
+    ("CONTRACT_ID", "Deployed VoteChain governance contract address (C...)"),
+];
+
+/// Validates all required environment variables up-front and returns a
+/// descriptive error listing every missing variable, rather than failing on
+/// the first missing one with a cryptic message.
+///
+/// # Errors
+/// Returns an error if any required variable is absent or empty, with a
+/// human-readable list of what is missing and where to find reference values.
+fn validate_env() -> Result<()> {
+    let missing: Vec<(&str, &str)> = REQUIRED_ENV_VARS
+        .iter()
+        .filter(|(key, _)| env::var(key).map(|v| v.is_empty()).unwrap_or(true))
+        .cloned()
+        .collect();
+
+    if !missing.is_empty() {
+        let details = missing
+            .iter()
+            .map(|(key, desc)| format!("  • {key}\n      {desc}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        anyhow::bail!(
+            "Indexer startup failed — missing required environment variables:\n\n\
+             {details}\n\n\
+             Set these variables before starting the indexer.\n\
+             See .env.example for reference values."
+        );
+    }
+    Ok(())
 }
 
 impl Config {
     fn from_env() -> Result<Self> {
+        // Validate all required vars first so the operator sees every missing
+        // variable in a single error, not one at a time.
+        validate_env()?;
+
         Ok(Self {
-            database_url: env::var("DATABASE_URL").context("DATABASE_URL")?,
+            database_url: env::var("DATABASE_URL").context("DATABASE_URL must be set")?,
             horizon_url: env::var("HORIZON_URL")
                 .unwrap_or_else(|_| "https://horizon-testnet.stellar.org".into()),
-            contract_id: env::var("CONTRACT_ID").context("CONTRACT_ID")?,
+            contract_id: env::var("CONTRACT_ID").context("CONTRACT_ID must be set")?,
             poll_interval: Duration::from_secs(
                 env::var("POLL_INTERVAL_SECS")
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(3),
             ),
+            backend_url: env::var("BACKEND_URL").ok(),
         })
     }
 }
@@ -108,6 +150,37 @@ async fn insert_event(pool: &PgPool, ev: &HorizonEvent, topic: &str) -> Result<(
 }
 
 // ---------------------------------------------------------------------------
+// Cache invalidation helper
+// ---------------------------------------------------------------------------
+
+/// Fire-and-forget POST to the backend cache invalidation endpoint.
+/// Errors are logged as warnings and never propagate to the caller.
+async fn call_invalidate(client: &Client, backend_url: &str, proposal_id: Option<i64>) {
+    let url = format!("{}/api/proposals/invalidate", backend_url);
+    let body = match proposal_id {
+        Some(id) => serde_json::json!({ "id": id }),
+        None => serde_json::json!({}),
+    };
+    match client
+        .post(&url)
+        .json(&body)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            info!(proposal_id, "cache invalidated via backend");
+        }
+        Ok(resp) => {
+            warn!(status = %resp.status(), "cache invalidation returned non-2xx");
+        }
+        Err(e) => {
+            warn!("cache invalidation request failed: {e:#}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Ingestion loop
 // ---------------------------------------------------------------------------
 
@@ -163,6 +236,18 @@ async fn poll_once(client: &Client, pool: &PgPool, cfg: &Config) -> Result<usize
             | "admxfer" | "paused" | "unpaused" | "durationupdate" => {
                 insert_event(pool, ev, topic).await?;
                 count += 1;
+
+                // Invalidate the backend Redis cache for events that change proposal state.
+                if matches!(topic, "created" | "vote" | "final" | "executed" | "cancelled") {
+                    if let Some(ref backend_url) = cfg.backend_url {
+                        let proposal_id: Option<i64> = ev.topic.get(1).and_then(|v| v.as_i64());
+                        let client = client.clone();
+                        let backend_url = backend_url.clone();
+                        tokio::spawn(async move {
+                            call_invalidate(&client, &backend_url, proposal_id).await;
+                        });
+                    }
+                }
             }
             other => warn!(other, "unknown event topic — skipping"),
         }
@@ -233,11 +318,20 @@ async fn main() -> Result<()> {
         .await
         .context("connect to postgres")?;
 
-    // Run migrations
-    sqlx::raw_sql(include_str!("../migrations/001_init.sql"))
-        .execute(&pool)
+    // Run database migrations using sqlx's built-in migration runner.
+    //
+    // sqlx::migrate!() embeds all *.sql files from the migrations/ directory
+    // at compile time, tracks which have been applied in the _sqlx_migrations
+    // table, and applies only unapplied migrations in version order.  This
+    // replaces the previous sqlx::raw_sql approach which re-executed the full
+    // schema on every startup and could not handle incremental schema changes
+    // without data loss risk.
+    sqlx::migrate!("./migrations")
+        .run(&pool)
         .await
-        .context("run migrations")?;
+        .context("run database migrations")?;
+
+    info!("database migrations applied successfully");
 
     // Spawn ingestion loop
     let ingest_pool = pool.clone();

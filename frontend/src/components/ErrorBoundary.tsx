@@ -1,4 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode, createRef } from "react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import i18n from "../i18n";
 
 interface Props {
   children: ReactNode;
@@ -53,60 +54,14 @@ export class ErrorBoundary extends Component<Props, State> {
         : "An unexpected error occurred.";
 
       return (
-        <div
-          ref={this.fallbackRef}
-          role="alert"
-          tabIndex={-1}
-          style={{
-            padding: "1.5rem",
-            textAlign: "center",
-            border: "1px solid #c62828",
-            borderRadius: "8px",
-            background: "#1e1e1e",
-            color: "#fff",
-            margin: "1rem",
-            outline: "none",
-          }}
-          aria-label="Error: something went wrong"
-        >
-          <h2 style={{ marginTop: 0 }}>Something went wrong</h2>
-          <p>{message}</p>
-          {error.message && (
-            <p
-              style={{
-                fontSize: "0.85rem",
-                opacity: 0.7,
-                fontFamily: "monospace",
-                wordBreak: "break-all",
-              }}
-            >
-              {error.message}
-            </p>
-          )}
-          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1rem" }}>
-            <button
-              onClick={this.handleRetry}
-              style={{ padding: "0.4rem 1rem", cursor: "pointer" }}
-              aria-label="Reload this section"
-            >
-              Reload
-            </button>
-            <a
-              href={GITHUB_ISSUES_URL}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                padding: "0.4rem 1rem",
-                color: "#90caf9",
-                textDecoration: "underline",
-                fontSize: "0.9rem",
-                alignSelf: "center",
-              }}
-              aria-label="Report this issue on GitHub (opens in new tab)"
-            >
-              Report issue ↗
-            </a>
-          </div>
+        <div role="alert" style={{ padding: "1.5rem", textAlign: "center" }}>
+          <h2>{i18n.t("app.somethingWentWrong")}</h2>
+          <p>
+            {this.props.section
+              ? i18n.t("app.sectionError", { section: this.props.section })
+              : i18n.t("app.unexpectedError")}
+          </p>
+          <button onClick={this.handleRetry}>{i18n.t("app.tryAgain")}</button>
         </div>
       );
     }
