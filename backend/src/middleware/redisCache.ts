@@ -54,7 +54,7 @@ const TTL = {
 // ── Cache key helpers ──────────────────────────────────────────────────────
 
 const KEY = {
-  list: () => "proposals:list",
+  list: (req: Request) => `proposals:list:${req.originalUrl}`,
   item: (id: string | number) => `proposals:item:${id}`,
 };
 
@@ -100,7 +100,7 @@ function cacheMiddleware(keyFn: (req: Request) => string, ttl: number) {
 }
 
 /** Middleware for GET /proposals — 30-second TTL */
-export const cacheProposalList = cacheMiddleware(() => KEY.list(), TTL.PROPOSAL_LIST);
+export const cacheProposalList = cacheMiddleware((req) => KEY.list(req), TTL.PROPOSAL_LIST);
 
 /** Middleware for GET /proposals/:id — 10-second TTL */
 export const cacheProposalItem = cacheMiddleware(
@@ -119,7 +119,10 @@ export const cacheProposalItem = cacheMiddleware(
  */
 export async function invalidateProposalCache(id?: string | number) {
   if (!redis?.isOpen) return;
-  const keys = [KEY.list()];
+  const keys: string[] = [];
+  for await (const key of redis.scanIterator({ MATCH: "proposals:list*" })) {
+    keys.push(key);
+  }
   if (id !== undefined) keys.push(KEY.item(id));
   try {
     await redis.del(keys);
