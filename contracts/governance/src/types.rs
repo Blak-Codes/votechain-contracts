@@ -85,20 +85,12 @@ pub enum ContractError {
     AdminTransferExpired = 32,
     /// 33 – Caller is not the pending admin
     NotPendingAdmin = 33,
-    /// 34 – Multi-sig is required for this operation; use propose_multisig_action
-    MultisigRequired = 34,
-    /// 35 – Threshold must be between 1 and the number of admins
-    InvalidThreshold = 35,
-    /// 36 – Admin set must have between 1 and 10 members
-    InvalidAdminSet = 36,
-    /// 37 – Pending action does not exist or has expired
-    PendingActionNotFound = 37,
-    /// 38 – Caller has already approved this pending action
-    AlreadyApproved = 38,
-    /// 39 – Pending action does not have enough approvals yet
-    InsufficientApprovals = 39,
-    /// 40 – Caller is not a member of the multi-sig admin set
-    NotMultisigAdmin = 40,
+    /// 34 – Delegator cannot vote directly while their power is delegated
+    VotingPowerDelegated = 34,
+    /// 35 – Cannot delegate to self
+    CannotDelegateToSelf = 35,
+    /// 36 – Cannot delegate to the zero address
+    InvalidDelegateAddress = 36,
 }
 
 /// Lifecycle state of the governance contract itself.
@@ -299,19 +291,13 @@ pub enum DataKey {
     /// Unix timestamp after which the pending admin nomination expires (instance storage).
     AdminTransferExpiry,
 
-    /// Vec<Address> of multi-sig co-signer addresses (instance storage).
-    /// Only set when the contract was initialised with `initialize_multisig`.
-    MultisigAdmins,
-
-    /// M-of-N threshold for multi-sig admin operations (instance storage).
-    MultisigThreshold,
-
-    /// Pending multi-sig action keyed by action ID (temporary storage).
-    /// Expires naturally with ledger entry TTL.
-    PendingAction(u64),
-
-    /// Counter for pending action IDs (instance storage).
-    PendingActionCount,
+    /// The address to which `delegator` has delegated their voting power (persistent storage).
+    /// Key space: one entry per unique delegator address.
+    /// Cleared when the delegator calls `undelegate`.
+    ///
+    /// Design note: only one delegation per delegator is allowed (no chaining).
+    /// If a delegator wants to change their delegate they must first undelegate.
+    Delegation(Address),
 }
 
 #[contracttype]

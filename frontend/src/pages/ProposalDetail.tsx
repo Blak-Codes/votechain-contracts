@@ -1,6 +1,8 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 
 // Placeholder — replace with full implementation
 export default function ProposalDetail() {
-  return <div>Proposal Detail</div>;
+  const { t } = useTranslation();
+  return <div>{t("proposal.title")}</div>;
 }

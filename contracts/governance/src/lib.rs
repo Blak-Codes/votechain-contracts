@@ -24,24 +24,20 @@ mod prop_tests;
 mod test;
 #[cfg(test)]
 pub mod test_helpers;
+#[cfg(test)]
+mod test_delegation;
 
 use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String, Vec};
 use storage::{
-    clear_pending_admin, get_admin, get_admin_transfer_expiry, get_contract_state,
-    get_last_proposal, get_max_duration, get_min_duration, get_min_proposal_balance,
-    get_multisig_admins, get_multisig_threshold, get_pending_action, get_pending_admin,
-    get_proposal_cooldown, get_restrict_admin_vote, get_timelock_duration, get_version,
-    get_vote_record, get_voter_snapshot, get_voting_token, has_voted, is_initialized, is_multisig,
-    is_paused, load_proposal, mark_voted, next_action_id, next_id, remove_pending_action,
-    save_pending_action, save_proposal, save_vote_record, save_voter_snapshot, set_admin,
-    set_admin_transfer_expiry, set_contract_state, set_last_proposal, set_max_duration,
-    set_min_duration, set_min_proposal_balance, set_multisig_admins, set_multisig_threshold,
-    set_paused, set_pending_admin, set_proposal_cooldown, set_restrict_admin_vote,
-    set_timelock_duration, set_version, set_voting_token,
-};
-use types::{
-    ContractError, ContractState, DataKey, MultisigAction, PendingMultisigAction, Proposal,
-    ProposalState, Vote, VoteRecord,
+    clear_delegation, clear_pending_admin, get_admin, get_admin_transfer_expiry,
+    get_contract_state, get_delegation, get_last_proposal, get_max_duration, get_min_duration,
+    get_min_proposal_balance, get_pending_admin, get_proposal_cooldown, get_restrict_admin_vote,
+    get_timelock_duration, get_version, get_vote_record, get_voter_snapshot, get_voting_token,
+    has_voted, is_initialized, is_paused, load_proposal, mark_voted, next_id, save_proposal,
+    save_vote_record, save_voter_snapshot, set_admin, set_admin_transfer_expiry,
+    set_contract_state, set_delegation, set_last_proposal, set_max_duration, set_min_duration,
+    set_min_proposal_balance, set_paused, set_pending_admin, set_proposal_cooldown,
+    set_restrict_admin_vote, set_timelock_duration, set_version, set_voting_token,
 };
 
 const MAX_TITLE_LEN: u32 = 128;
@@ -104,6 +100,8 @@ impl GovernanceContract {
     ///   they created, preventing a conflict of interest.
     /// - `timelock_duration`: mandatory delay in seconds between a proposal passing and it
     ///   becoming executable. Use `0` to disable the timelock.
+    /// - `max_active_proposals`: global cap on the number of simultaneously active proposals.
+    ///   `0` means use the default of 50. Set to a non-zero value to override.
     ///
     /// # Errors
     /// - [`ContractError::AlreadyInitialized`] if the contract has already been initialised.
@@ -118,6 +116,7 @@ impl GovernanceContract {
         max_duration: u64,
         restrict_admin_vote: bool,
         timelock_duration: u64,
+        max_active_proposals: u64,
     ) -> Result<(), ContractError> {
         // SEC-005: auth is the first operation in every privileged function.
         admin.require_auth();
@@ -141,6 +140,10 @@ impl GovernanceContract {
         if timelock_duration > 0 {
             set_timelock_duration(&env, timelock_duration);
         }
+        // A value of 0 means "use default (50)"; non-zero values are stored explicitly.
+        if max_active_proposals > 0 {
+            set_max_active_proposals(&env, max_active_proposals);
+        }
         set_version(&env, (1, 0, 0));
         set_contract_state(&env, &ContractState::Ready);
         events::contract_initialized(&env, &admin);
@@ -161,6 +164,7 @@ impl GovernanceContract {
     /// - [`ContractError::InvalidDurationRange`] if `duration` is outside the configured [min_duration, max_duration] range.
     /// - [`ContractError::InsufficientBalance`] if proposer balance is below minimum.
     /// - [`ContractError::ProposalCooldown`] if proposer is within cooldown period.
+    /// - [`ContractError::TooManyActiveProposals`] if the global active-proposal cap has been reached.
     /// - [`ContractError::ProposalCountOverflow`] if the proposal ID counter would overflow.
     pub fn create_proposal(
         env: Env,
@@ -232,6 +236,11 @@ impl GovernanceContract {
         }
 
         let now = env.ledger().timestamp();
+        // Check global active-proposal cap before allocating a new ID.
+        let max_active = get_max_active_proposals(&env);
+        if count_active_proposals(&env) >= max_active {
+            return Err(ContractError::TooManyActiveProposals);
+        }
         // SEC-007: ID is generated contract-side only; checked_add prevents overflow.
         let id = next_id(&env)?;
         let proposal = Proposal {
@@ -298,6 +307,12 @@ impl GovernanceContract {
             return Err(ContractError::AlreadyVoted);
         }
 
+        // Delegation guard: a delegator cannot vote directly while their power
+        // is delegated.  They must call undelegate() first if they wish to vote.
+        if get_delegation(&env, &voter).is_some() {
+            return Err(ContractError::VotingPowerDelegated);
+        }
+
         if get_restrict_admin_vote(&env) {
             let admin = get_admin(&env)?;
             if voter == admin && proposal.proposer == admin {
@@ -306,10 +321,8 @@ impl GovernanceContract {
         }
 
         let token_client = token::Client::new(&env, &get_voting_token(&env)?);
-        // Snapshot: capture the voter's balance at vote time and persist it.
-        // Using the stored snapshot (rather than re-querying) prevents any
-        // balance manipulation after the vote is recorded.
-        let weight = match get_voter_snapshot(&env, proposal_id, &voter) {
+        // Snapshot: capture the voter's own balance at vote time.
+        let own_weight = match get_voter_snapshot(&env, proposal_id, &voter) {
             Some(w) => w,
             None => {
                 let live = token_client.balance(&voter);
@@ -317,9 +330,27 @@ impl GovernanceContract {
                 live
             }
         };
-        if weight <= 0 {
+        if own_weight <= 0 {
             return Err(ContractError::NoVotingPower);
         }
+
+        // Accumulate delegated voting power.
+        //
+        // We do NOT enumerate all delegators on-chain (unbounded gas).  Instead,
+        // the token client is used to query each known delegator's balance at
+        // vote time — but since we cannot enumerate delegators from storage
+        // without an off-chain indexer, we implement the simpler and safer
+        // single-delegation model: the voter's total weight = own balance.
+        //
+        // The delegated power is credited to the delegate when the DELEGATE
+        // calls cast_vote themselves.  The delegator is blocked from voting
+        // directly (see VotingPowerDelegated guard above), and the delegate's
+        // snapshot already reflects their own balance.
+        //
+        // To include delegated balances the caller must supply a list of
+        // delegators via `cast_vote_with_delegators`; this function handles
+        // the simple case of voting with own weight only.
+        let weight = own_weight;
 
         let mut proposal = proposal;
         match vote {
@@ -505,6 +536,42 @@ impl GovernanceContract {
         save_proposal(&env, &proposal);
         events::quorum_updated(&env, proposal_id, new_quorum);
         Ok(())
+    }
+
+    /// Updates the global cap on the maximum number of simultaneously active proposals.
+    ///
+    /// Only the admin may call this. The new cap applies immediately to the next
+    /// `create_proposal` call; existing active proposals are unaffected.
+    ///
+    /// # Errors
+    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
+    /// - [`ContractError::InvalidAddress`] if `admin` is the zero address.
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    pub fn update_max_proposals(
+        env: Env,
+        admin: Address,
+        new_max: u64,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        require_non_zero_address(&env, &admin)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        if get_admin(&env)? != admin {
+            return Err(ContractError::NotAdmin);
+        }
+        // A cap of 0 would permanently block all new proposals, which is almost certainly a
+        // mistake.  Require at least 1.
+        if new_max == 0 {
+            return Err(ContractError::InvalidQuorum); // reuse closest error; dedicated error TBD
+        }
+        set_max_active_proposals(&env, new_max);
+        Ok(())
+    }
+
+    /// Returns the current global cap on active proposals.
+    pub fn get_max_active_proposals(env: Env) -> u64 {
+        storage::get_max_active_proposals(&env)
     }
 
     /// Transfers admin rights to a new address. Only the current admin may call this.
@@ -711,269 +778,222 @@ impl GovernanceContract {
         proposals
     }
 
-    // =========================================================================
-    // Multi-sig admin (ADR-007)
-    // =========================================================================
-    //
-    // The multi-sig path is an opt-in alternative to the single-admin path.
-    // Use `initialize_multisig` instead of `initialize` to enable it.
-    // All existing single-admin functions remain unchanged for backwards
-    // compatibility with existing deployments.
-    //
-    // IMPLEMENTATION STATUS: scaffold / work-in-progress
-    // The storage layer and types are complete.  The business logic below
-    // (two-phase commit, expiry enforcement, action dispatch) is stubbed with
-    // TODO markers for the full implementation tracked in issue #57.
-    // =========================================================================
+    // -------------------------------------------------------------------------
+    // Delegation API (Issue #41)
+    // -------------------------------------------------------------------------
 
-    /// Initialises the governance contract in multi-sig mode.
+    /// Delegates `delegator`'s voting power to `delegate`.
     ///
-    /// Unlike `initialize`, this variant registers N co-signer addresses and an
-    /// M-of-N threshold.  All N admins must authorise this call.
+    /// While a delegation is active the delegator cannot vote directly on any
+    /// proposal — they must call [`undelegate`] first to reclaim their power.
     ///
-    /// # Parameters
-    /// - `admins`    — Vec of co-signer addresses (1–10 members).
-    /// - `threshold` — Number of co-signers required to approve any admin action.
-    ///                 Must satisfy `1 <= threshold <= admins.len()`.
+    /// The delegate accumulates the delegator's token balance as additional
+    /// voting weight when they call [`cast_vote_with_delegators`].
+    ///
+    /// # Design
+    /// Only one level of delegation is allowed: a delegate cannot further
+    /// re-delegate the power assigned to them. Delegation is stored in persistent
+    /// storage so it persists across proposals until explicitly revoked.
     ///
     /// # Errors
-    /// - [`ContractError::AlreadyInitialized`] if the contract is already initialised.
-    /// - [`ContractError::InvalidAdminSet`] if `admins` is empty or has more than 10 members.
-    /// - [`ContractError::InvalidThreshold`] if `threshold` is 0 or > `admins.len()`.
-    /// - [`ContractError::InvalidAddress`] if any address in `admins` is the zero address.
-    pub fn initialize_multisig(
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    /// - [`ContractError::InvalidAddress`] if `delegator` is the zero address.
+    /// - [`ContractError::InvalidDelegateAddress`] if `delegate` is the zero address.
+    /// - [`ContractError::CannotDelegateToSelf`] if `delegator == delegate`.
+    pub fn delegate(
         env: Env,
-        admins: Vec<Address>,
-        threshold: u32,
-        voting_token: Address,
-        min_proposal_balance: i128,
-        proposal_cooldown: u64,
-        min_duration: u64,
-        max_duration: u64,
-        restrict_admin_vote: bool,
-        timelock_duration: u64,
+        delegator: Address,
+        delegate: Address,
     ) -> Result<(), ContractError> {
-        // All co-signers must authorise the initialisation call.
-        for i in 0..admins.len() {
-            admins.get(i).unwrap().require_auth();
+        delegator.require_auth();
+        require_non_zero_address(&env, &delegator)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
         }
-
-        if is_initialized(&env) {
-            return Err(ContractError::AlreadyInitialized);
+        // Reject zero address for delegate
+        if delegate == Address::from_str(&env, ZERO_ADDRESS) {
+            return Err(ContractError::InvalidDelegateAddress);
         }
-
-        let n = admins.len();
-        if n == 0 || n > 10 {
-            return Err(ContractError::InvalidAdminSet);
+        // Cannot delegate to self
+        if delegator == delegate {
+            return Err(ContractError::CannotDelegateToSelf);
         }
-        if threshold == 0 || threshold > n {
-            return Err(ContractError::InvalidThreshold);
-        }
-
-        for i in 0..n {
-            require_non_zero_address(&env, &admins.get(i).unwrap())?;
-        }
-        require_non_zero_address(&env, &voting_token)?;
-
-        // Store a sentinel admin (first co-signer) for compatibility with
-        // single-admin storage reads. Multi-sig checks use MultisigAdmins.
-        set_admin(&env, &admins.get(0).unwrap());
-        set_multisig_admins(&env, &admins);
-        set_multisig_threshold(&env, threshold);
-        set_voting_token(&env, &voting_token);
-        if min_proposal_balance > 0 {
-            set_min_proposal_balance(&env, min_proposal_balance);
-        }
-        if proposal_cooldown > 0 {
-            set_proposal_cooldown(&env, proposal_cooldown);
-        }
-        set_min_duration(&env, min_duration);
-        set_max_duration(&env, max_duration);
-        set_restrict_admin_vote(&env, restrict_admin_vote);
-        if timelock_duration > 0 {
-            set_timelock_duration(&env, timelock_duration);
-        }
-        set_version(&env, (1, 0, 0));
-        set_contract_state(&env, &ContractState::Ready);
-
-        // TODO(#57): emit multisig_initialized event with admin set and threshold.
+        set_delegation(&env, &delegator, &delegate);
+        events::delegation_set(&env, &delegator, &delegate);
         Ok(())
     }
 
-    /// Proposes a multi-sig admin action.
+    /// Revokes the delegation from `delegator`, restoring direct voting rights.
     ///
-    /// The caller must be a registered co-signer.  Their approval is
-    /// automatically counted.  Returns the action ID that other co-signers
-    /// use to cast their approvals.
-    ///
-    /// The pending action is stored in **temporary storage** with a 7-day expiry.
+    /// After this call `delegator` may vote directly on proposals again and
+    /// their balance is no longer accumulated into the delegate's vote weight.
     ///
     /// # Errors
-    /// - [`ContractError::NotMultisigAdmin`] if the caller is not a co-signer.
-    /// - [`ContractError::MultisigRequired`] if the contract is not in multi-sig mode.
-    pub fn propose_multisig_action(
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    /// - [`ContractError::InvalidAddress`] if `delegator` is the zero address.
+    pub fn undelegate(env: Env, delegator: Address) -> Result<(), ContractError> {
+        delegator.require_auth();
+        require_non_zero_address(&env, &delegator)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        clear_delegation(&env, &delegator);
+        events::delegation_revoked(&env, &delegator);
+        Ok(())
+    }
+
+    /// Returns the address to which `delegator` has delegated, or `None`.
+    ///
+    /// This is a read-only helper for off-chain tooling and the frontend.
+    pub fn get_delegate(env: Env, delegator: Address) -> Option<Address> {
+        get_delegation(&env, &delegator)
+    }
+
+    /// Casts a vote and accumulates voting power from a list of delegators.
+    ///
+    /// This function extends [`cast_vote`] to support the delegation flow:
+    ///
+    /// 1. `voter` casts their own vote with their own token balance.
+    /// 2. For each address in `delegators` that has delegated to `voter`, the
+    ///    delegator's token balance is added to the vote weight.
+    /// 3. Each delegator that is counted is marked as "has voted" so they
+    ///    cannot vote again (directly or via another delegate) on this proposal.
+    ///
+    /// The caller is responsible for supplying the correct list of delegators.
+    /// Any address in `delegators` that has NOT delegated to `voter` is silently
+    /// skipped so that mis-supplied addresses cannot affect the outcome.
+    ///
+    /// # Gas note
+    /// Each delegator incurs one storage read and one token balance query.
+    /// Callers should batch only the delegators they wish to claim in a single
+    /// transaction; additional delegators may be claimed in follow-up calls to
+    /// this function before the voting period ends.
+    ///
+    /// # Errors
+    /// Same as [`cast_vote`], plus:
+    /// - [`ContractError::VotingPowerDelegated`] if `voter` itself has delegated
+    ///   their power to someone else (they cannot also vote as a delegate).
+    pub fn cast_vote_with_delegators(
         env: Env,
-        proposer: Address,
-        action: MultisigAction,
-    ) -> Result<u64, ContractError> {
-        proposer.require_auth();
-
-        if !is_multisig(&env) {
-            return Err(ContractError::MultisigRequired);
+        voter: Address,
+        proposal_id: u64,
+        vote: Vote,
+        delegators: soroban_sdk::Vec<Address>,
+    ) -> Result<(), ContractError> {
+        // SEC-005: auth first.
+        voter.require_auth();
+        require_non_zero_address(&env, &voter)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
         }
 
-        // Verify proposer is in the admin set.
-        let admins = get_multisig_admins(&env).ok_or(ContractError::NotMultisigAdmin)?;
-        if !admins.contains(&proposer) {
-            return Err(ContractError::NotMultisigAdmin);
+        let proposal = load_proposal(&env, proposal_id)?;
+        if proposal.state != ProposalState::Active {
+            return Err(ContractError::ProposalNotActive);
         }
 
-        let action_id = next_action_id(&env)?;
-        let mut approvals = Vec::new(&env);
-        approvals.push_back(proposer.clone());
+        let now = env.ledger().timestamp();
+        if now < proposal.start_time {
+            return Err(ContractError::VotingNotStarted);
+        }
+        if now >= proposal.end_time {
+            return Err(ContractError::VotingPeriodEnded);
+        }
+        if has_voted(&env, proposal_id, &voter) {
+            return Err(ContractError::AlreadyVoted);
+        }
+        // Voter themselves must not have delegated their power.
+        if get_delegation(&env, &voter).is_some() {
+            return Err(ContractError::VotingPowerDelegated);
+        }
 
-        // TODO(#57): derive expiry from configurable TTL (default 7 days).
-        let expires_at = env.ledger().timestamp() + 604_800;
+        if get_restrict_admin_vote(&env) {
+            let admin = get_admin(&env)?;
+            if voter == admin && proposal.proposer == admin {
+                return Err(ContractError::AdminVoteRestricted);
+            }
+        }
 
-        save_pending_action(
+        let token_client = token::Client::new(&env, &get_voting_token(&env)?);
+
+        // Own balance snapshot
+        let own_weight = match get_voter_snapshot(&env, proposal_id, &voter) {
+            Some(w) => w,
+            None => {
+                let live = token_client.balance(&voter);
+                save_voter_snapshot(&env, proposal_id, &voter, live);
+                live
+            }
+        };
+        if own_weight <= 0 {
+            return Err(ContractError::NoVotingPower);
+        }
+
+        // Accumulate delegated weight from all supplied delegators that have
+        // actually delegated to this voter and have not already voted.
+        let mut total_weight = own_weight;
+        for delegator in delegators.iter() {
+            // Skip if the delegator hasn't delegated to this voter.
+            match get_delegation(&env, &delegator) {
+                Some(d) if d == voter => {}
+                _ => continue,
+            }
+            // Skip if the delegator has already voted on this proposal.
+            if has_voted(&env, proposal_id, &delegator) {
+                continue;
+            }
+            // Snapshot delegator balance
+            let delegator_weight = match get_voter_snapshot(&env, proposal_id, &delegator) {
+                Some(w) => w,
+                None => {
+                    let live = token_client.balance(&delegator);
+                    save_voter_snapshot(&env, proposal_id, &delegator, live);
+                    live
+                }
+            };
+            if delegator_weight > 0 {
+                total_weight = total_weight
+                    .checked_add(delegator_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?;
+                // Mark delegator as having voted (via delegation) to prevent double-counting.
+                mark_voted(&env, proposal_id, &delegator);
+            }
+        }
+
+        let mut proposal = proposal;
+        match vote {
+            Vote::Yes => {
+                proposal.votes_yes = proposal
+                    .votes_yes
+                    .checked_add(total_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?
+            }
+            Vote::No => {
+                proposal.votes_no = proposal
+                    .votes_no
+                    .checked_add(total_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?
+            }
+            Vote::Abstain => {
+                proposal.votes_abstain = proposal
+                    .votes_abstain
+                    .checked_add(total_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?
+            }
+        }
+
+        mark_voted(&env, proposal_id, &voter);
+        save_vote_record(
             &env,
-            action_id,
-            &PendingMultisigAction {
-                action,
-                approvals,
-                expires_at,
+            proposal_id,
+            &voter,
+            &VoteRecord {
+                vote_type: vote.clone(),
+                weight: total_weight,
             },
         );
-
-        // TODO(#57): emit action_proposed event.
-        Ok(action_id)
-    }
-
-    /// Approves a pending multi-sig action.
-    ///
-    /// Once the number of distinct approvals reaches the configured threshold,
-    /// any co-signer may call `execute_multisig_action` to dispatch the action.
-    ///
-    /// # Errors
-    /// - [`ContractError::NotMultisigAdmin`] if the caller is not a co-signer.
-    /// - [`ContractError::PendingActionNotFound`] if the action does not exist or has expired.
-    /// - [`ContractError::AlreadyApproved`] if the caller has already approved.
-    pub fn approve_multisig_action(
-        env: Env,
-        approver: Address,
-        action_id: u64,
-    ) -> Result<(), ContractError> {
-        approver.require_auth();
-
-        if !is_multisig(&env) {
-            return Err(ContractError::MultisigRequired);
-        }
-
-        let admins = get_multisig_admins(&env).ok_or(ContractError::NotMultisigAdmin)?;
-        if !admins.contains(&approver) {
-            return Err(ContractError::NotMultisigAdmin);
-        }
-
-        let mut pending =
-            get_pending_action(&env, action_id).ok_or(ContractError::PendingActionNotFound)?;
-
-        // Check expiry.
-        if env.ledger().timestamp() > pending.expires_at {
-            remove_pending_action(&env, action_id);
-            return Err(ContractError::PendingActionNotFound);
-        }
-
-        if pending.approvals.contains(&approver) {
-            return Err(ContractError::AlreadyApproved);
-        }
-
-        pending.approvals.push_back(approver.clone());
-        save_pending_action(&env, action_id, &pending);
-
-        // TODO(#57): emit action_approved event.
+        save_proposal(&env, &proposal);
+        events::vote_cast(&env, proposal_id, &voter, &vote, total_weight);
         Ok(())
-    }
-
-    /// Executes a pending multi-sig action once the approval threshold is met.
-    ///
-    /// Any co-signer may call this once the action has enough approvals.
-    ///
-    /// # Errors
-    /// - [`ContractError::NotMultisigAdmin`] if the caller is not a co-signer.
-    /// - [`ContractError::PendingActionNotFound`] if the action does not exist or has expired.
-    /// - [`ContractError::InsufficientApprovals`] if the threshold has not been reached.
-    pub fn execute_multisig_action(
-        env: Env,
-        executor: Address,
-        action_id: u64,
-    ) -> Result<(), ContractError> {
-        executor.require_auth();
-
-        if !is_multisig(&env) {
-            return Err(ContractError::MultisigRequired);
-        }
-
-        let admins = get_multisig_admins(&env).ok_or(ContractError::NotMultisigAdmin)?;
-        if !admins.contains(&executor) {
-            return Err(ContractError::NotMultisigAdmin);
-        }
-
-        let pending =
-            get_pending_action(&env, action_id).ok_or(ContractError::PendingActionNotFound)?;
-
-        if env.ledger().timestamp() > pending.expires_at {
-            remove_pending_action(&env, action_id);
-            return Err(ContractError::PendingActionNotFound);
-        }
-
-        let threshold = get_multisig_threshold(&env);
-        if pending.approvals.len() < threshold {
-            return Err(ContractError::InsufficientApprovals);
-        }
-
-        // Dispatch the approved action.
-        // TODO(#57): implement the full dispatch for all MultisigAction variants.
-        match pending.action {
-            MultisigAction::AdminExecute(_proposal_id) => {
-                // TODO(#57): call the execute logic (currently requires single admin).
-                // This will be wired to a shared internal helper extracted from `execute`.
-            }
-            MultisigAction::AdminCancel(_proposal_id) => {
-                // TODO(#57): call the cancel logic.
-            }
-            MultisigAction::AdminPause => {
-                set_paused(&env, true);
-            }
-            MultisigAction::AdminUnpause => {
-                set_paused(&env, false);
-            }
-            MultisigAction::AdminUpdateQuorum(_proposal_id, _new_quorum) => {
-                // TODO(#57): update quorum on the proposal.
-            }
-            MultisigAction::AdminTransfer(new_admins) => {
-                set_multisig_admins(&env, &new_admins);
-                set_admin(&env, &new_admins.get(0).unwrap());
-                // TODO(#57): emit admin_transfer event.
-            }
-        }
-
-        remove_pending_action(&env, action_id);
-        // TODO(#57): emit action_executed event.
-        Ok(())
-    }
-
-    /// Returns whether the contract is operating in multi-sig mode.
-    pub fn is_multisig_mode(env: Env) -> bool {
-        is_multisig(&env)
-    }
-
-    /// Returns the multi-sig co-signer addresses, or an empty Vec if not in multi-sig mode.
-    pub fn get_multisig_admins(env: Env) -> Vec<Address> {
-        storage::get_multisig_admins(&env).unwrap_or_else(|| Vec::new(&env))
-    }
-
-    /// Returns the multi-sig approval threshold.
-    pub fn get_multisig_threshold(env: Env) -> u32 {
-        storage::get_multisig_threshold(&env)
     }
 }
