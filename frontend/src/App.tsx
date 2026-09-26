@@ -12,6 +12,13 @@ export default function App() {
 
   return (
     <ErrorBoundary section="App">
+      {/* TransactionToast is rendered outside routing so it persists across navigation */}
+      <TransactionToast
+        tx={tx}
+        onRetry={tx.hash ? () => retry(tx.hash!) : undefined}
+        onDismiss={reset}
+      />
+
       <ErrorBoundary section="ProposalList">
         <React.Suspense fallback={<p>{t("app.loading")}</p>}>
           <ProposalList />

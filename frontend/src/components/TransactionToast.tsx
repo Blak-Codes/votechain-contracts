@@ -20,15 +20,22 @@ const STATUS_COLOR: Record<string, string> = {
   failed: "#c62828",
 };
 
+/** Auto-dismiss delay (ms) for confirmed transactions */
+const AUTO_DISMISS_MS = 8000;
+
 export function TransactionToast({ tx, onRetry, onDismiss }: Props) {
   const { t } = useTranslation();
 
   if (tx.status === "idle" || !tx.hash) return null;
 
+  // Use role="alert" for errors (assertive), role="status" for others (polite)
+  const isError = tx.status === "failed";
+
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
+      aria-atomic="true"
       style={{
         position: "fixed",
         bottom: 24,
@@ -51,7 +58,7 @@ export function TransactionToast({ tx, onRetry, onDismiss }: Props) {
         {tx.hash}
       </div>
 
-      {tx.explorerUrl && (
+      {tx.explorerUrl && tx.status === "confirmed" && (
         <a
           href={tx.explorerUrl}
           target="_blank"
