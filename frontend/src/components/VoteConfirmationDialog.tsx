@@ -1,0 +1,91 @@
+import { useEffect, useRef } from "react";
+
+export type VoteChoice = "Yes" | "No" | "Abstain";
+
+type Props = {
+  proposalTitle: string;
+  choice: VoteChoice;
+  estimatedFee: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+export function VoteConfirmationDialog({
+  proposalTitle,
+  choice,
+  estimatedFee,
+  onConfirm,
+  onCancel,
+}: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onCancel}>
+      <div
+        ref={dialogRef}
+        className="vote-confirmation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vote-confirmation-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <h2 id="vote-confirmation-title">Confirm your vote</h2>
+        <dl>
+          <div>
+            <dt>Proposal</dt>
+            <dd>{proposalTitle}</dd>
+          </div>
+          <div>
+            <dt>Choice</dt>
+            <dd>{choice}</dd>
+          </div>
+          <div>
+            <dt>Estimated transaction fee</dt>
+            <dd>{estimatedFee}</dd>
+          </div>
+        </dl>
+        <p>This vote will be submitted on-chain and cannot be undone.</p>
+        <div className="modal-actions">
+          <button ref={cancelRef} type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm}>
+            Confirm Vote
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
