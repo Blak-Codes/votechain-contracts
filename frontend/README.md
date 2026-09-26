@@ -82,36 +82,9 @@ Stellar RPC endpoint. The expected shape of each proposal object matches the on-
 - `aria-label` on all interactive and informational elements
 - Fully keyboard navigable
 - Respects `prefers-reduced-motion`
-- `ErrorBoundary` moves focus to the error region when an error is caught
 
-## Bundle Size Budget
-
-The frontend enforces bundle size limits in CI to prevent silent growth.
-
-| Metric | Limit | Enforcement |
-|--------|-------|-------------|
-| Main JS bundle (gzipped) | **250 KB** | CI fails if exceeded |
-| Bundle size change vs base | **> 5%** | PR comment posted automatically |
-
-### Checking locally
-
-```bash
-npm run build
-npm run size
-```
-
-The script (`scripts/bundle-size.js`) reads `dist/assets/*.js`, computes gzip sizes,
-and exits with a non-zero code if the main bundle exceeds 250 KB gzipped.
-
-A machine-readable report is written to `dist/bundle-report.json` after each run.
-
-### Overriding the limit
-
-Set `BUNDLE_SIZE_LIMIT_KB` to temporarily adjust the threshold (useful for profiling):
-
-```bash
-BUNDLE_SIZE_LIMIT_KB=300 npm run size
-```
-
-> **Note:** Do not raise the limit permanently without a conscious architectural decision.
-> Keep dependencies lean; prefer tree-shaking-friendly libraries.
+The React entry point runs `@axe-core/react` only in development mode. CI builds
+the production preview and runs `npm run audit:a11y`; the axe command fails the
+job when it finds WCAG violations. Keep text and badge foreground/background
+pairs at a minimum contrast ratio of 4.5:1 for normal text and 3:1 for large
+text or UI components in both light and dark themes.
