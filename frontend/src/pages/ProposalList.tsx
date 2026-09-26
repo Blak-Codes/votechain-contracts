@@ -1,16 +1,7 @@
-/**
- * ProposalList page — consumes ProposalContext (issue #10).
- * No prop-drilling: proposals are read directly from context.
- */
-import React from 'react';
-import ProposalListComponent from '../components/ProposalList';
-import { useProposals } from '../context/ProposalContext';
+import React from "react";
+import { useTranslation } from "react-i18next";
 
 export default function ProposalList() {
-  const { proposals, loading, error } = useProposals();
-
-  if (loading) return <p aria-live="polite">Loading proposals…</p>;
-  if (error) return <p role="alert">Error: {error}</p>;
-
-  return <ProposalListComponent proposals={proposals} />;
+  const { t } = useTranslation();
+  return <div>{t("proposal.listTitle")}</div>;
 }

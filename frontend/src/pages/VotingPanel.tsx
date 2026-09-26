@@ -1,57 +1,48 @@
-/**
- * VotingPanel page — consumes WalletContext and ProposalContext (issue #10).
- * Wallet address is available without prop-drilling.
- */
-import React from 'react';
-import { useWallet } from '../context/WalletContext';
-import { useProposals } from '../context/ProposalContext';
+import { useState } from "react";
+import { TransactionToast } from "../components/TransactionToast";
+import { VoteConfirmationDialog, VoteChoice } from "../components/VoteConfirmationDialog";
+import { useTransactionStatus } from "../hooks/useTransactionStatus";
 
-export default function VotingPanel() {
-  const { address, connected, connect } = useWallet();
-  const { proposals, loading } = useProposals();
+type Props = {
+  proposalTitle?: string;
+  estimatedFee?: string;
+  onSubmitVote?: (choice: VoteChoice) => Promise<string>;
+};
 
-  if (!connected) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <p>Connect your wallet to participate in governance voting.</p>
-        <button onClick={connect} style={{ marginTop: '1rem' }}>
-          Connect Wallet
-        </button>
-      </div>
-    );
+export default function VotingPanel({
+  proposalTitle = "Current proposal",
+  estimatedFee = "0.00001 XLM",
+  onSubmitVote,
+}: Props) {
+  const [pendingChoice, setPendingChoice] = useState<VoteChoice | null>(null);
+  const { tx, submit, retry, reset } = useTransactionStatus();
+
+  async function confirmVote() {
+    if (!pendingChoice || !onSubmitVote) return;
+    const hash = await onSubmitVote(pendingChoice);
+    setPendingChoice(null);
+    submit(hash);
   }
 
-  if (loading) return <p aria-live="polite">Loading proposals…</p>;
-
-  const activeProposals = proposals.filter((p) => p.state === 'Active');
-
   return (
-    <section aria-labelledby="voting-panel-heading" style={{ padding: '1.5rem' }}>
-      <h2 id="voting-panel-heading">Voting Panel</h2>
-      <p style={{ marginBottom: '1rem', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-        Connected as: <code>{address}</code>
-      </p>
-      {activeProposals.length === 0 ? (
-        <p>No active proposals to vote on.</p>
-      ) : (
-        <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {activeProposals.map((proposal) => (
-            <li
-              key={proposal.id}
-              style={{
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                padding: '1rem',
-              }}
-            >
-              <strong>{proposal.title}</strong>
-              <p style={{ fontSize: '0.875rem', marginTop: '0.25rem', color: 'var(--color-text-muted)' }}>
-                {proposal.description}
-              </p>
-            </li>
-          ))}
-        </ul>
+    <section aria-labelledby="voting-panel-title">
+      <h2 id="voting-panel-title">Cast your vote</h2>
+      <div className="vote-actions" role="group" aria-label="Choose a vote">
+        {(["Yes", "No", "Abstain"] as VoteChoice[]).map((choice) => (
+          <button key={choice} type="button" onClick={() => setPendingChoice(choice)}>
+            {choice}
+          </button>
+        ))}
+      </div>
+      <TransactionToast tx={tx} onRetry={() => tx.hash && retry(tx.hash)} onDismiss={reset} />
+      {pendingChoice && (
+        <VoteConfirmationDialog
+          proposalTitle={proposalTitle}
+          choice={pendingChoice}
+          estimatedFee={estimatedFee}
+          onConfirm={confirmVote}
+          onCancel={() => setPendingChoice(null)}
+        />
       )}
     </section>
   );
