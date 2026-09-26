@@ -422,3 +422,78 @@ Now that you're set up:
 5. Join the Stellar Discord to connect with the community
 
 Happy coding! 🚀
+
+## Health Endpoints
+
+The VoteChain backend exposes two HTTP endpoints for liveness and readiness probing. These are available at the root path (not under `/api`) so that load balancers and container orchestrators (Docker, Kubernetes, etc.) can reach them without API credentials or rate-limit concerns.
+
+### GET /health — Liveness Probe
+
+Confirms the Node.js process is alive and able to handle requests.
+
+**Always returns `200 OK`** as long as the process is running.
+
+```bash
+curl http://localhost:3001/health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "uptime": 42.3,
+  "version": "1.0.0"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `string` | Always `"ok"` |
+| `uptime` | `number` | Seconds since the process started (`process.uptime()`) |
+| `version` | `string` | Backend version from `package.json` |
+
+---
+
+### GET /ready — Readiness Probe
+
+Confirms all external dependencies (currently Redis) are healthy before accepting traffic.
+
+**Returns `200 OK`** when Redis is connected:
+
+```bash
+curl http://localhost:3001/ready
+```
+
+```json
+{ "status": "ready" }
+```
+
+**Returns `503 Service Unavailable`** when Redis is not connected:
+
+```json
+{
+  "status": "unavailable",
+  "checks": { "redis": false }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `string` | `"ready"` or `"unavailable"` |
+| `checks.redis` | `boolean` | `true` when the Redis connection is open |
+
+---
+
+### Docker Compose Healthcheck
+
+The `backend` service in `docker-compose.yml` is configured with a healthcheck that polls `/health` every 30 seconds:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+```
+
+This means other services that use `depends_on: backend` with a `condition: service_healthy` will wait until the backend reports healthy before starting.

@@ -356,3 +356,35 @@ pub fn get_admin_transfer_expiry(env: &Env) -> u64 {
         .get(&DataKey::AdminTransferExpiry)
         .unwrap_or(0)
 }
+
+// ---------------------------------------------------------------------------
+// Delegation storage
+// ---------------------------------------------------------------------------
+
+/// Records that `delegator` has delegated their voting power to `delegate`.
+///
+/// Stored in persistent storage so that delegations survive ledger expiry
+/// without needing to be re-submitted on every proposal.
+pub fn set_delegation(env: &Env, delegator: &Address, delegate: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Delegation(delegator.clone()), delegate);
+}
+
+/// Returns the address to which `delegator` has delegated, or `None` if the
+/// delegator has not delegated their voting power.
+pub fn get_delegation(env: &Env, delegator: &Address) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Delegation(delegator.clone()))
+}
+
+/// Removes the delegation record for `delegator`.
+///
+/// After this call `get_delegation(delegator)` returns `None` and the
+/// delegator may vote directly again.
+pub fn clear_delegation(env: &Env, delegator: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Delegation(delegator.clone()));
+}
