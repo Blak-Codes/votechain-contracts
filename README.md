@@ -3,6 +3,10 @@
 [![CI](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml)
 [![Coverage](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml/badge.svg?job=coverage)](https://github.com/veracindarella/votechain-contracts/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Milestone: v1.0 MVP](https://img.shields.io/github/milestones/progress/veracindarella/votechain-contracts/1)](https://github.com/veracindarella/votechain-contracts/milestone/1)
+[![Milestone: v1.1 Delegation](https://img.shields.io/github/milestones/progress/veracindarella/votechain-contracts/2)](https://github.com/veracindarella/votechain-contracts/milestone/2)
+[![Milestone: v1.2 SDK](https://img.shields.io/github/milestones/progress/veracindarella/votechain-contracts/3)](https://github.com/veracindarella/votechain-contracts/milestone/3)
+[![Milestone: v2.0 Multi-sig](https://img.shields.io/github/milestones/progress/veracindarella/votechain-contracts/4)](https://github.com/veracindarella/votechain-contracts/milestone/4)
 
 Soroban smart contracts for **VoteChain** — decentralized on-chain governance and voting on the Stellar blockchain.
 
