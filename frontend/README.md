@@ -61,3 +61,9 @@ In `src/proposals.js`, replace the `MOCK_PROPOSALS` array with a real fetch from
 - `aria-label` on all interactive and informational elements
 - Fully keyboard navigable
 - Respects `prefers-reduced-motion`
+
+The React entry point runs `@axe-core/react` only in development mode. CI builds
+the production preview and runs `npm run audit:a11y`; the axe command fails the
+job when it finds WCAG violations. Keep text and badge foreground/background
+pairs at a minimum contrast ratio of 4.5:1 for normal text and 3:1 for large
+text or UI components in both light and dark themes.
