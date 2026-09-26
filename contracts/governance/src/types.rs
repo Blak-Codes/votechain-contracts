@@ -85,6 +85,12 @@ pub enum ContractError {
     AdminTransferExpired = 32,
     /// 33 – Caller is not the pending admin
     NotPendingAdmin = 33,
+    /// 34 – Delegator cannot vote directly while their power is delegated
+    VotingPowerDelegated = 34,
+    /// 35 – Cannot delegate to self
+    CannotDelegateToSelf = 35,
+    /// 36 – Cannot delegate to the zero address
+    InvalidDelegateAddress = 36,
 }
 
 /// Lifecycle state of the governance contract itself.
@@ -253,6 +259,14 @@ pub enum DataKey {
 
     /// Unix timestamp after which the pending admin nomination expires (instance storage).
     AdminTransferExpiry,
+
+    /// The address to which `delegator` has delegated their voting power (persistent storage).
+    /// Key space: one entry per unique delegator address.
+    /// Cleared when the delegator calls `undelegate`.
+    ///
+    /// Design note: only one delegation per delegator is allowed (no chaining).
+    /// If a delegator wants to change their delegate they must first undelegate.
+    Delegation(Address),
 }
 
 #[contracttype]

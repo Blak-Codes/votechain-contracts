@@ -40,3 +40,56 @@ All `ContractError` codes returned by VoteChain smart contracts as `u32` values.
 - Error codes are scoped per contract — code `1` in the governance contract and code `1` in the token contract are independent.
 - Errors are returned as `Result::Err(ContractError)` and surface as a `u32` in Soroban host diagnostics.
 - Use `get_proposal(proposal_id)` and `has_voted(proposal_id, voter)` as pre-flight checks to avoid the most common errors.
+
+---
+
+## API Error Codes
+
+All HTTP API responses from the VoteChain REST indexer use a consistent JSON error envelope:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Proposal 42 not found",
+    "details": []
+  }
+}
+```
+
+The `code` field is a machine-readable string constant. The `message` field provides a human-readable description. The `details` array is reserved for future use (e.g. field-level validation errors).
+
+### HTTP Status Codes and Error Code Mapping
+
+| HTTP Status | Error Code | Description | Example Trigger |
+|-------------|------------|-------------|-----------------|
+| 400 | `BAD_REQUEST` | The request body or query parameters are malformed or fail validation. | Invalid JSON body; `quorum` is zero; `duration` outside allowed range. |
+| 401 | `UNAUTHORIZED` | The request lacks valid authentication credentials. | Missing or expired bearer token. |
+| 403 | `FORBIDDEN` | The caller is authenticated but does not have permission for this action. | Non-admin address calling an admin-only endpoint. |
+| 404 | `NOT_FOUND` | The requested resource does not exist. | Unknown proposal ID; unmatched route path. |
+| 429 | `RATE_LIMITED` | The caller has exceeded the allowed request rate. | Proposer within cooldown period; too many requests per minute. |
+| 500 | `INTERNAL_ERROR` | An unexpected server-side error occurred. | Unhandled exception; storage layer failure. |
+
+### Contract Error to HTTP Status Mapping
+
+When the indexer or API layer surfaces a smart contract error, the following mapping applies:
+
+| Contract Error | HTTP Status | API Error Code |
+|----------------|-------------|----------------|
+| `ProposalNotFound` | 404 | `NOT_FOUND` |
+| `NotFound` | 404 | `NOT_FOUND` |
+| `InvalidQuorum` | 400 | `BAD_REQUEST` |
+| `InvalidDuration` / `InvalidDurationRange` | 400 | `BAD_REQUEST` |
+| `InvalidTitle` | 400 | `BAD_REQUEST` |
+| `InvalidDescription` | 400 | `BAD_REQUEST` |
+| `InvalidAmount` | 400 | `BAD_REQUEST` |
+| `NotAdmin` | 403 | `FORBIDDEN` |
+| `AdminVoteRestricted` | 403 | `FORBIDDEN` |
+| `ProposalCooldown` | 429 | `RATE_LIMITED` |
+| All other errors | 500 | `INTERNAL_ERROR` |
+
+### Notes
+
+- `500 INTERNAL_ERROR` responses never include stack traces or internal implementation details. Check server logs for diagnostics.
+- The `details` array in the envelope is currently always empty. It will be used in a future version to carry per-field validation errors (e.g. `[{ "field": "quorum", "issue": "must be > 0" }]`).
+- Route-not-found errors (`404 NOT_FOUND`) include the HTTP method and path in the message, e.g. `Route GET /api/unknown not found`.

@@ -136,3 +136,23 @@ pub fn contract_unpaused(env: &Env, admin: &Address) {
     env.events()
         .publish((symbol_short!("unpaused"),), admin.clone());
 }
+
+/// Emits a `delegset` event when a delegator sets a new delegation.
+///
+/// Topics: `("delegset",)`
+/// Data: `(delegator: Address, delegate: Address)`
+pub fn delegation_set(env: &Env, delegator: &Address, delegate: &Address) {
+    env.events().publish(
+        (symbol_short!("delegset"),),
+        (delegator.clone(), delegate.clone()),
+    );
+}
+
+/// Emits a `delegrevk` event when a delegator revokes their delegation.
+///
+/// Topics: `("delegrevk",)`
+/// Data: `delegator: Address`
+pub fn delegation_revoked(env: &Env, delegator: &Address) {
+    env.events()
+        .publish((symbol_short!("delegrevk"),), delegator.clone());
+}
