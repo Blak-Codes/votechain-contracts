@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { Proposal, ProposalState } from '../types';
 
 const sortOptions = [
@@ -115,7 +116,9 @@ export default function ProposalList({ proposals }: Props) {
             {filtered.map((proposal) => (
               <tr key={proposal.id}>
                 <td>{proposal.id}</td>
-                <td>{proposal.title}</td>
+                <td>
+                  <Link to={`/proposals/${proposal.id}`}>{proposal.title}</Link>
+                </td>
                 <td>
                   <span className={statusClass(proposal.state)}>{labelForState(proposal.state)}</span>
                 </td>
