@@ -27,7 +27,7 @@ pub mod test_helpers;
 #[cfg(test)]
 mod test_delegation;
 
-use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String};
+use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String, Vec};
 use storage::{
     clear_delegation, clear_pending_admin, get_admin, get_admin_transfer_expiry,
     get_contract_state, get_delegation, get_last_proposal, get_max_duration, get_min_duration,
@@ -39,7 +39,6 @@ use storage::{
     set_min_proposal_balance, set_paused, set_pending_admin, set_proposal_cooldown,
     set_restrict_admin_vote, set_timelock_duration, set_version, set_voting_token,
 };
-use types::{ContractError, ContractState, DataKey, Proposal, ProposalState, Vote, VoteRecord};
 
 const MAX_TITLE_LEN: u32 = 128;
 const MAX_DESC_LEN: u32 = 1024;

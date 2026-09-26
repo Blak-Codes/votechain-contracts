@@ -37,8 +37,8 @@
 //! Because the discriminant is part of the serialised key, these can never
 //! collide even when called with identical arguments.
 
-use crate::types::{ContractError, ContractState, DataKey, Proposal, VoteRecord};
-use soroban_sdk::{Address, Env};
+use crate::types::{ContractError, ContractState, DataKey, PendingMultisigAction, Proposal, VoteRecord};
+use soroban_sdk::{Address, Env, Vec};
 
 // =============================================================================
 // Storage Strategy

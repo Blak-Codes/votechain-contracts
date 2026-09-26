@@ -143,7 +143,38 @@ pub struct Proposal {
     pub execute_after: u64,
 }
 
-/// Storage key enum for the governance contract.
+/// Pending multi-sig action types.
+///
+/// Each variant represents a privileged admin operation that requires
+/// M-of-N co-signer approval before it is executed on-chain.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum MultisigAction {
+    /// Mark a passed proposal as executed.
+    AdminExecute(u64),
+    /// Cancel an active proposal.
+    AdminCancel(u64),
+    /// Pause the contract.
+    AdminPause,
+    /// Unpause the contract.
+    AdminUnpause,
+    /// Update the quorum threshold on an active proposal.
+    AdminUpdateQuorum(u64, i128),
+    /// Transfer the admin set to a new set of addresses.
+    AdminTransfer(soroban_sdk::Vec<Address>),
+}
+
+/// Stored record of a pending multi-sig action and its current approvals.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PendingMultisigAction {
+    /// The action to be executed once the threshold is reached.
+    pub action: MultisigAction,
+    /// Addresses that have already approved this action.
+    pub approvals: soroban_sdk::Vec<Address>,
+    /// Unix timestamp after which this action expires.
+    pub expires_at: u64,
+}
 ///
 /// Every storage entry is keyed by a variant of this enum.  Because Soroban
 /// serialises the variant discriminant as part of the XDR key, each variant
