@@ -18,6 +18,7 @@ struct Config {
     horizon_url: String,
     contract_id: String,
     poll_interval: Duration,
+    backend_url: Option<String>,
 }
 
 impl Config {
@@ -33,6 +34,7 @@ impl Config {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(3),
             ),
+            backend_url: env::var("BACKEND_URL").ok(),
         })
     }
 }
@@ -108,6 +110,37 @@ async fn insert_event(pool: &PgPool, ev: &HorizonEvent, topic: &str) -> Result<(
 }
 
 // ---------------------------------------------------------------------------
+// Cache invalidation helper
+// ---------------------------------------------------------------------------
+
+/// Fire-and-forget POST to the backend cache invalidation endpoint.
+/// Errors are logged as warnings and never propagate to the caller.
+async fn call_invalidate(client: &Client, backend_url: &str, proposal_id: Option<i64>) {
+    let url = format!("{}/api/proposals/invalidate", backend_url);
+    let body = match proposal_id {
+        Some(id) => serde_json::json!({ "id": id }),
+        None => serde_json::json!({}),
+    };
+    match client
+        .post(&url)
+        .json(&body)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            info!(proposal_id, "cache invalidated via backend");
+        }
+        Ok(resp) => {
+            warn!(status = %resp.status(), "cache invalidation returned non-2xx");
+        }
+        Err(e) => {
+            warn!("cache invalidation request failed: {e:#}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Ingestion loop
 // ---------------------------------------------------------------------------
 
@@ -163,6 +196,18 @@ async fn poll_once(client: &Client, pool: &PgPool, cfg: &Config) -> Result<usize
             | "admxfer" | "paused" | "unpaused" | "durationupdate" => {
                 insert_event(pool, ev, topic).await?;
                 count += 1;
+
+                // Invalidate the backend Redis cache for events that change proposal state.
+                if matches!(topic, "created" | "vote" | "final" | "executed" | "cancelled") {
+                    if let Some(ref backend_url) = cfg.backend_url {
+                        let proposal_id: Option<i64> = ev.topic.get(1).and_then(|v| v.as_i64());
+                        let client = client.clone();
+                        let backend_url = backend_url.clone();
+                        tokio::spawn(async move {
+                            call_invalidate(&client, &backend_url, proposal_id).await;
+                        });
+                    }
+                }
             }
             other => warn!(other, "unknown event topic — skipping"),
         }

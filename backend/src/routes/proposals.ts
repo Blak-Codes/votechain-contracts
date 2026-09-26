@@ -10,6 +10,7 @@ import {
   getCacheMetrics,
   invalidateProposalCache,
 } from "../middleware/redisCache";
+import { adminAuth } from "../middleware/adminAuth";
 
 const router = Router();
 
@@ -27,8 +28,8 @@ router.get("/proposals/:id", cacheProposalItem, async (req: Request, res: Respon
   res.json({ id });
 });
 
-// POST /proposals/invalidate — called by the event indexer on new on-chain events
-router.post("/proposals/invalidate", async (req: Request, res: Response) => {
+// POST /proposals/invalidate — admin-only; protected by JWT auth middleware
+router.post("/proposals/invalidate", adminAuth, async (req: Request, res: Response) => {
   const { id } = req.body as { id?: string };
   await invalidateProposalCache(id);
   res.json({ ok: true, invalidated: id ?? "list" });

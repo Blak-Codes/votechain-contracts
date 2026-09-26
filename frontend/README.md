@@ -62,13 +62,8 @@ In `src/proposals.js`, replace the `MOCK_PROPOSALS` array with a real fetch from
 - Fully keyboard navigable
 - Respects `prefers-reduced-motion`
 
-## Internationalisation
-
-The React application uses `react-i18next` with the English catalog at
-`src/locales/en.json`. The browser language is detected from
-`navigator.language`; English is the fallback for unsupported languages.
-
-To add a locale, create another JSON file in `src/locales`, add it to the
-`resources` map in `src/i18n.ts`, and include its language code in the
-supported-language selection. Use the existing translation keys in components
-with `useTranslation()` rather than adding visible strings directly to JSX.
+The React entry point runs `@axe-core/react` only in development mode. CI builds
+the production preview and runs `npm run audit:a11y`; the axe command fails the
+job when it finds WCAG violations. Keep text and badge foreground/background
+pairs at a minimum contrast ratio of 4.5:1 for normal text and 3:1 for large
+text or UI components in both light and dark themes.
