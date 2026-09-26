@@ -27,25 +27,38 @@ export async function connectRedis(url = process.env.REDIS_URL ?? "redis://local
   console.log("[redis] connected to", url);
 }
 
+/**
+ * Returns true when the Redis client exists and its connection is open.
+ * Used by the /ready health-check endpoint.
+ */
+export function isRedisReady(): boolean {
+  return !!redis?.isOpen;
+}
+
 // ── Metrics ────────────────────────────────────────────────────────────────
 
-const metrics = { hits: 0, misses: 0 };
+const metrics = { hits: 0, misses: 0, invalidations: 0 };
 
 export function getCacheMetrics() {
-  return { ...metrics, hitRate: metrics.hits + metrics.misses === 0 ? 0 : metrics.hits / (metrics.hits + metrics.misses) };
+  const total = metrics.hits + metrics.misses;
+  return {
+    ...metrics,
+    hitRate: total === 0 ? 0 : metrics.hits / total,
+    missRate: total === 0 ? 0 : metrics.misses / total,
+  };
 }
 
 // ── TTL constants ──────────────────────────────────────────────────────────
 
 const TTL = {
-  PROPOSAL_LIST: 30,   // seconds
-  PROPOSAL_ITEM: 10,   // seconds
+  PROPOSAL_LIST: parseInt(process.env.PROPOSAL_LIST_TTL ?? '30', 10),
+  PROPOSAL_ITEM: parseInt(process.env.PROPOSAL_ITEM_TTL ?? '10', 10),
 };
 
 // ── Cache key helpers ──────────────────────────────────────────────────────
 
 const KEY = {
-  list: () => "proposals:list",
+  list: (req: Request) => `proposals:list:${req.originalUrl}`,
   item: (id: string | number) => `proposals:item:${id}`,
 };
 
@@ -91,7 +104,7 @@ function cacheMiddleware(keyFn: (req: Request) => string, ttl: number) {
 }
 
 /** Middleware for GET /proposals — 30-second TTL */
-export const cacheProposalList = cacheMiddleware(() => KEY.list(), TTL.PROPOSAL_LIST);
+export const cacheProposalList = cacheMiddleware((req) => KEY.list(req), TTL.PROPOSAL_LIST);
 
 /** Middleware for GET /proposals/:id — 10-second TTL */
 export const cacheProposalItem = cacheMiddleware(
@@ -110,10 +123,14 @@ export const cacheProposalItem = cacheMiddleware(
  */
 export async function invalidateProposalCache(id?: string | number) {
   if (!redis?.isOpen) return;
-  const keys = [KEY.list()];
+  const keys: string[] = [];
+  for await (const key of redis.scanIterator({ MATCH: "proposals:list*" })) {
+    keys.push(key);
+  }
   if (id !== undefined) keys.push(KEY.item(id));
   try {
     await redis.del(keys);
+    metrics.invalidations++;
     console.log("[redis] invalidated keys:", keys);
   } catch (err) {
     console.error("[redis] del error:", err);

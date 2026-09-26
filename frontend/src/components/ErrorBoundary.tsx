@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
+import i18n from "../i18n";
 
 interface Props {
   children: ReactNode;
@@ -34,13 +35,13 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.error) {
       return (
         <div role="alert" style={{ padding: "1.5rem", textAlign: "center" }}>
-          <h2>Something went wrong</h2>
+          <h2>{i18n.t("app.somethingWentWrong")}</h2>
           <p>
             {this.props.section
-              ? `The "${this.props.section}" section failed to load.`
-              : "An unexpected error occurred."}
+              ? i18n.t("app.sectionError", { section: this.props.section })
+              : i18n.t("app.unexpectedError")}
           </p>
-          <button onClick={this.handleRetry}>Try again</button>
+          <button onClick={this.handleRetry}>{i18n.t("app.tryAgain")}</button>
         </div>
       );
     }
