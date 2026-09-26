@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 const STELLAR_NETWORK = "TESTNET";
 const FREIGHTER_DOWNLOAD = "https://www.freighter.app/";
@@ -21,6 +22,7 @@ function truncate(addr: string) {
 }
 
 export function FreighterWallet() {
+  const { t } = useTranslation();
   const [wallet, setWallet] = useState<WalletState>({
     address: null,
     network: null,
@@ -47,7 +49,7 @@ export function FreighterWallet() {
   async function connect() {
     const freighter = (window as unknown as Record<string, unknown>).freighter as FreighterApi | undefined;
     if (!freighter) {
-      setError("Freighter extension not found. Please install it first.");
+      setError(t("wallet.notFound"));
       return;
     }
     setLoading(true);
@@ -58,7 +60,7 @@ export function FreighterWallet() {
       const network: string = await freighter.getNetwork();
       setWallet({ address, network, connected: true });
     } catch (e: unknown) {
-      setError((e as { message?: string })?.message ?? "Failed to connect wallet.");
+      setError((e as { message?: string })?.message ?? t("wallet.failed"));
     } finally {
       setLoading(false);
     }
@@ -77,8 +79,8 @@ export function FreighterWallet() {
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
       {!wallet.connected ? (
-        <button onClick={connect} disabled={loading} aria-label="Connect Freighter Wallet">
-          {loading ? "Connecting…" : "Connect Wallet"}
+        <button onClick={connect} disabled={loading} aria-label={t("wallet.connectLabel")}>
+          {loading ? t("wallet.connecting") : t("wallet.connect")}
         </button>
       ) : (
         <>
@@ -86,14 +88,14 @@ export function FreighterWallet() {
             {truncate(wallet.address!)}
           </span>
           <button onClick={disconnect} aria-label="Disconnect wallet">
-            Disconnect
+            {t("wallet.disconnect")}
           </button>
         </>
       )}
 
       {networkMismatch && (
         <span role="alert" style={{ color: "orange" }}>
-          ⚠ Network mismatch: connected to {wallet.network}, expected {STELLAR_NETWORK}
+          {t("wallet.networkMismatch", { network: wallet.network, expected: STELLAR_NETWORK })}
         </span>
       )}
 
@@ -102,7 +104,7 @@ export function FreighterWallet() {
           {error}{" "}
           {error.includes("not found") && (
             <a href={FREIGHTER_DOWNLOAD} target="_blank" rel="noreferrer">
-              Install Freighter
+              {t("wallet.install")}
             </a>
           )}
         </span>
