@@ -1,7 +1,6 @@
 import React from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { TransactionToast } from "./components/TransactionToast";
-import { useTransactionStatus } from "./hooks/useTransactionStatus";
+import { useTranslation } from "react-i18next";
 
 // Placeholder page components — replace with real implementations
 const ProposalList = React.lazy(() => import("./pages/ProposalList"));
@@ -9,7 +8,7 @@ const ProposalDetail = React.lazy(() => import("./pages/ProposalDetail"));
 const VotingPanel = React.lazy(() => import("./pages/VotingPanel"));
 
 export default function App() {
-  const { tx, retry, reset } = useTransactionStatus();
+  const { t } = useTranslation();
 
   return (
     <ErrorBoundary section="App">
@@ -21,19 +20,19 @@ export default function App() {
       />
 
       <ErrorBoundary section="ProposalList">
-        <React.Suspense fallback={<p>Loading…</p>}>
+        <React.Suspense fallback={<p>{t("app.loading")}</p>}>
           <ProposalList />
         </React.Suspense>
       </ErrorBoundary>
 
       <ErrorBoundary section="ProposalDetail">
-        <React.Suspense fallback={<p>Loading…</p>}>
+        <React.Suspense fallback={<p>{t("app.loading")}</p>}>
           <ProposalDetail />
         </React.Suspense>
       </ErrorBoundary>
 
       <ErrorBoundary section="VotingPanel">
-        <React.Suspense fallback={<p>Loading…</p>}>
+        <React.Suspense fallback={<p>{t("app.loading")}</p>}>
           <VotingPanel />
         </React.Suspense>
       </ErrorBoundary>

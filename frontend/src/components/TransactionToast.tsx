@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+import React from "react";
+import { useTranslation } from "react-i18next";
 import { TxState } from "../hooks/useTransactionStatus";
 
 type Props = {
@@ -8,9 +9,9 @@ type Props = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: "⏳ Transaction pending…",
-  confirmed: "✅ Transaction confirmed",
-  failed: "❌ Transaction failed",
+  pending: "transaction.pending",
+  confirmed: "transaction.confirmed",
+  failed: "transaction.failed",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -23,14 +24,7 @@ const STATUS_COLOR: Record<string, string> = {
 const AUTO_DISMISS_MS = 8000;
 
 export function TransactionToast({ tx, onRetry, onDismiss }: Props) {
-  // Auto-dismiss after 8 seconds on success
-  useEffect(() => {
-    if (tx.status !== "confirmed") return;
-    const timer = setTimeout(() => {
-      onDismiss?.();
-    }, AUTO_DISMISS_MS);
-    return () => clearTimeout(timer);
-  }, [tx.status, onDismiss]);
+  const { t } = useTranslation();
 
   if (tx.status === "idle" || !tx.hash) return null;
 
@@ -57,7 +51,7 @@ export function TransactionToast({ tx, onRetry, onDismiss }: Props) {
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 4 }}>
-        {STATUS_LABEL[tx.status]}
+        {t(STATUS_LABEL[tx.status])}
       </div>
 
       <div style={{ fontSize: 12, opacity: 0.7, wordBreak: "break-all" }}>
@@ -71,7 +65,7 @@ export function TransactionToast({ tx, onRetry, onDismiss }: Props) {
           rel="noreferrer"
           style={{ fontSize: 12, color: "#90caf9", display: "block", marginTop: 4 }}
         >
-          View on Stellar Explorer ↗
+          {t("transaction.viewExplorer")} ↗
         </a>
       )}
 
@@ -86,18 +80,18 @@ export function TransactionToast({ tx, onRetry, onDismiss }: Props) {
           <button
             onClick={onRetry}
             style={{ fontSize: 12, padding: "2px 8px", cursor: "pointer" }}
-            aria-label="Retry transaction"
+            aria-label={t("transaction.retry")}
           >
-            Retry
+            {t("transaction.retryButton")}
           </button>
         )}
         {onDismiss && (
           <button
             onClick={onDismiss}
             style={{ fontSize: 12, padding: "2px 8px", cursor: "pointer" }}
-            aria-label="Dismiss notification"
+            aria-label={t("transaction.dismiss")}
           >
-            Dismiss
+            {t("transaction.dismissButton")}
           </button>
         )}
       </div>
