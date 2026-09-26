@@ -11,6 +11,7 @@
 
 import { createClient, RedisClientType } from "redis";
 import { Request, Response, NextFunction } from "express";
+import { log } from "./requestTracing";
 
 // ── Redis client ───────────────────────────────────────────────────────────
 
@@ -22,9 +23,9 @@ export function getRedis() {
 
 export async function connectRedis(url = process.env.REDIS_URL ?? "redis://localhost:6379") {
   redis = createClient({ url }) as RedisClientType;
-  redis.on("error", (err) => console.error("[redis] error:", err));
+  redis.on("error", (err) => log("error", "redis error", { error: String(err) }));
   await redis.connect();
-  console.log("[redis] connected to", url);
+  log("info", "redis connected", { url });
 }
 
 /**
@@ -83,7 +84,7 @@ function cacheMiddleware(keyFn: (req: Request) => string, ttl: number) {
         return res.send(cached);
       }
     } catch (err) {
-      console.error("[redis] get error:", err);
+      log("error", "redis get error", { error: String(err) });
     }
 
     metrics.misses++;
@@ -94,7 +95,7 @@ function cacheMiddleware(keyFn: (req: Request) => string, ttl: number) {
     res.json = (body: unknown) => {
       const serialized = JSON.stringify(body);
       redis.setEx(key, ttl, serialized).catch((err) =>
-        console.error("[redis] setEx error:", err)
+        log("error", "redis setEx error", { error: String(err) })
       );
       return originalJson(body);
     };
@@ -133,6 +134,6 @@ export async function invalidateProposalCache(id?: string | number) {
     metrics.invalidations++;
     console.log("[redis] invalidated keys:", keys);
   } catch (err) {
-    console.error("[redis] del error:", err);
+    log("error", "redis del error", { error: String(err) });
   }
 }

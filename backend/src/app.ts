@@ -51,6 +51,7 @@ const env = validateEnv();
 // ---------------------------------------------------------------------------
 
 const app = express();
+app.use(requestTracing);
 app.use(express.json());
 
 // Health and readiness probes — mounted BEFORE rate-limiting and auth so
