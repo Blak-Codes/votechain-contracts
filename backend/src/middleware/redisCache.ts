@@ -23,6 +23,14 @@ export async function connectRedis(url = process.env.REDIS_URL ?? "redis://local
   console.log("[redis] connected to", url);
 }
 
+/**
+ * Returns true when the Redis client exists and its connection is open.
+ * Used by the /ready health-check endpoint.
+ */
+export function isRedisReady(): boolean {
+  return !!redis?.isOpen;
+}
+
 // ── Metrics ────────────────────────────────────────────────────────────────
 
 const metrics = { hits: 0, misses: 0, invalidations: 0 };
