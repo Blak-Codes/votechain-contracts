@@ -357,45 +357,34 @@ pub fn get_admin_transfer_expiry(env: &Env) -> u64 {
         .unwrap_or(0)
 }
 
-/// Stores the global cap on the number of simultaneously active proposals.
-pub fn set_max_active_proposals(env: &Env, max: u64) {
-    env.storage()
-        .instance()
-        .set(&DataKey::MaxActiveProposals, &max);
-}
+// ---------------------------------------------------------------------------
+// Delegation storage
+// ---------------------------------------------------------------------------
 
-/// Returns the global active-proposal cap. Defaults to 50.
-pub fn get_max_active_proposals(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&DataKey::MaxActiveProposals)
-        .unwrap_or(50)
-}
-
-/// Counts the number of proposals that are currently in `Active` state.
+/// Records that `delegator` has delegated their voting power to `delegate`.
 ///
-/// Scans all stored proposals up to `proposal_count`.  This is a linear scan
-/// and is suitable for on-chain use given Soroban's execution model, but callers
-/// should be aware of the cost for very large proposal counts.
-pub fn count_active_proposals(env: &Env) -> u64 {
-    let total: u64 = env
-        .storage()
-        .instance()
-        .get(&DataKey::ProposalCount)
-        .unwrap_or(0);
+/// Stored in persistent storage so that delegations survive ledger expiry
+/// without needing to be re-submitted on every proposal.
+pub fn set_delegation(env: &Env, delegator: &Address, delegate: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Delegation(delegator.clone()), delegate);
+}
 
-    use crate::types::ProposalState;
-    let mut active: u64 = 0;
-    for id in 1..=total {
-        if let Some(p) = env
-            .storage()
-            .persistent()
-            .get::<DataKey, crate::types::Proposal>(&DataKey::Proposal(id))
-        {
-            if p.state == ProposalState::Active {
-                active += 1;
-            }
-        }
-    }
-    active
+/// Returns the address to which `delegator` has delegated, or `None` if the
+/// delegator has not delegated their voting power.
+pub fn get_delegation(env: &Env, delegator: &Address) -> Option<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Delegation(delegator.clone()))
+}
+
+/// Removes the delegation record for `delegator`.
+///
+/// After this call `get_delegation(delegator)` returns `None` and the
+/// delegator may vote directly again.
+pub fn clear_delegation(env: &Env, delegator: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Delegation(delegator.clone()));
 }

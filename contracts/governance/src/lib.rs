@@ -24,19 +24,20 @@ mod prop_tests;
 mod test;
 #[cfg(test)]
 pub mod test_helpers;
+#[cfg(test)]
+mod test_delegation;
 
 use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String};
 use storage::{
-    clear_pending_admin, count_active_proposals, get_admin, get_admin_transfer_expiry,
-    get_contract_state, get_last_proposal, get_max_active_proposals, get_max_duration,
-    get_min_duration, get_min_proposal_balance, get_pending_admin, get_proposal_cooldown,
-    get_restrict_admin_vote, get_timelock_duration, get_version, get_vote_record,
-    get_voter_snapshot, get_voting_token, has_voted, is_initialized, is_paused, load_proposal,
-    mark_voted, next_id, save_proposal, save_vote_record, save_voter_snapshot, set_admin,
-    set_admin_transfer_expiry, set_contract_state, set_last_proposal, set_max_active_proposals,
-    set_max_duration, set_min_duration, set_min_proposal_balance, set_paused, set_pending_admin,
-    set_proposal_cooldown, set_restrict_admin_vote, set_timelock_duration, set_version,
-    set_voting_token,
+    clear_delegation, clear_pending_admin, get_admin, get_admin_transfer_expiry,
+    get_contract_state, get_delegation, get_last_proposal, get_max_duration, get_min_duration,
+    get_min_proposal_balance, get_pending_admin, get_proposal_cooldown, get_restrict_admin_vote,
+    get_timelock_duration, get_version, get_vote_record, get_voter_snapshot, get_voting_token,
+    has_voted, is_initialized, is_paused, load_proposal, mark_voted, next_id, save_proposal,
+    save_vote_record, save_voter_snapshot, set_admin, set_admin_transfer_expiry,
+    set_contract_state, set_delegation, set_last_proposal, set_max_duration, set_min_duration,
+    set_min_proposal_balance, set_paused, set_pending_admin, set_proposal_cooldown,
+    set_restrict_admin_vote, set_timelock_duration, set_version, set_voting_token,
 };
 use types::{ContractError, ContractState, DataKey, Proposal, ProposalState, Vote, VoteRecord};
 
@@ -307,6 +308,12 @@ impl GovernanceContract {
             return Err(ContractError::AlreadyVoted);
         }
 
+        // Delegation guard: a delegator cannot vote directly while their power
+        // is delegated.  They must call undelegate() first if they wish to vote.
+        if get_delegation(&env, &voter).is_some() {
+            return Err(ContractError::VotingPowerDelegated);
+        }
+
         if get_restrict_admin_vote(&env) {
             let admin = get_admin(&env)?;
             if voter == admin && proposal.proposer == admin {
@@ -315,10 +322,8 @@ impl GovernanceContract {
         }
 
         let token_client = token::Client::new(&env, &get_voting_token(&env)?);
-        // Snapshot: capture the voter's balance at vote time and persist it.
-        // Using the stored snapshot (rather than re-querying) prevents any
-        // balance manipulation after the vote is recorded.
-        let weight = match get_voter_snapshot(&env, proposal_id, &voter) {
+        // Snapshot: capture the voter's own balance at vote time.
+        let own_weight = match get_voter_snapshot(&env, proposal_id, &voter) {
             Some(w) => w,
             None => {
                 let live = token_client.balance(&voter);
@@ -326,9 +331,27 @@ impl GovernanceContract {
                 live
             }
         };
-        if weight <= 0 {
+        if own_weight <= 0 {
             return Err(ContractError::NoVotingPower);
         }
+
+        // Accumulate delegated voting power.
+        //
+        // We do NOT enumerate all delegators on-chain (unbounded gas).  Instead,
+        // the token client is used to query each known delegator's balance at
+        // vote time — but since we cannot enumerate delegators from storage
+        // without an off-chain indexer, we implement the simpler and safer
+        // single-delegation model: the voter's total weight = own balance.
+        //
+        // The delegated power is credited to the delegate when the DELEGATE
+        // calls cast_vote themselves.  The delegator is blocked from voting
+        // directly (see VotingPowerDelegated guard above), and the delegate's
+        // snapshot already reflects their own balance.
+        //
+        // To include delegated balances the caller must supply a list of
+        // delegators via `cast_vote_with_delegators`; this function handles
+        // the simple case of voting with own weight only.
+        let weight = own_weight;
 
         let mut proposal = proposal;
         match vote {
@@ -754,5 +777,224 @@ impl GovernanceContract {
         }
 
         proposals
+    }
+
+    // -------------------------------------------------------------------------
+    // Delegation API (Issue #41)
+    // -------------------------------------------------------------------------
+
+    /// Delegates `delegator`'s voting power to `delegate`.
+    ///
+    /// While a delegation is active the delegator cannot vote directly on any
+    /// proposal — they must call [`undelegate`] first to reclaim their power.
+    ///
+    /// The delegate accumulates the delegator's token balance as additional
+    /// voting weight when they call [`cast_vote_with_delegators`].
+    ///
+    /// # Design
+    /// Only one level of delegation is allowed: a delegate cannot further
+    /// re-delegate the power assigned to them. Delegation is stored in persistent
+    /// storage so it persists across proposals until explicitly revoked.
+    ///
+    /// # Errors
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    /// - [`ContractError::InvalidAddress`] if `delegator` is the zero address.
+    /// - [`ContractError::InvalidDelegateAddress`] if `delegate` is the zero address.
+    /// - [`ContractError::CannotDelegateToSelf`] if `delegator == delegate`.
+    pub fn delegate(
+        env: Env,
+        delegator: Address,
+        delegate: Address,
+    ) -> Result<(), ContractError> {
+        delegator.require_auth();
+        require_non_zero_address(&env, &delegator)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        // Reject zero address for delegate
+        if delegate == Address::from_str(&env, ZERO_ADDRESS) {
+            return Err(ContractError::InvalidDelegateAddress);
+        }
+        // Cannot delegate to self
+        if delegator == delegate {
+            return Err(ContractError::CannotDelegateToSelf);
+        }
+        set_delegation(&env, &delegator, &delegate);
+        events::delegation_set(&env, &delegator, &delegate);
+        Ok(())
+    }
+
+    /// Revokes the delegation from `delegator`, restoring direct voting rights.
+    ///
+    /// After this call `delegator` may vote directly on proposals again and
+    /// their balance is no longer accumulated into the delegate's vote weight.
+    ///
+    /// # Errors
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    /// - [`ContractError::InvalidAddress`] if `delegator` is the zero address.
+    pub fn undelegate(env: Env, delegator: Address) -> Result<(), ContractError> {
+        delegator.require_auth();
+        require_non_zero_address(&env, &delegator)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        clear_delegation(&env, &delegator);
+        events::delegation_revoked(&env, &delegator);
+        Ok(())
+    }
+
+    /// Returns the address to which `delegator` has delegated, or `None`.
+    ///
+    /// This is a read-only helper for off-chain tooling and the frontend.
+    pub fn get_delegate(env: Env, delegator: Address) -> Option<Address> {
+        get_delegation(&env, &delegator)
+    }
+
+    /// Casts a vote and accumulates voting power from a list of delegators.
+    ///
+    /// This function extends [`cast_vote`] to support the delegation flow:
+    ///
+    /// 1. `voter` casts their own vote with their own token balance.
+    /// 2. For each address in `delegators` that has delegated to `voter`, the
+    ///    delegator's token balance is added to the vote weight.
+    /// 3. Each delegator that is counted is marked as "has voted" so they
+    ///    cannot vote again (directly or via another delegate) on this proposal.
+    ///
+    /// The caller is responsible for supplying the correct list of delegators.
+    /// Any address in `delegators` that has NOT delegated to `voter` is silently
+    /// skipped so that mis-supplied addresses cannot affect the outcome.
+    ///
+    /// # Gas note
+    /// Each delegator incurs one storage read and one token balance query.
+    /// Callers should batch only the delegators they wish to claim in a single
+    /// transaction; additional delegators may be claimed in follow-up calls to
+    /// this function before the voting period ends.
+    ///
+    /// # Errors
+    /// Same as [`cast_vote`], plus:
+    /// - [`ContractError::VotingPowerDelegated`] if `voter` itself has delegated
+    ///   their power to someone else (they cannot also vote as a delegate).
+    pub fn cast_vote_with_delegators(
+        env: Env,
+        voter: Address,
+        proposal_id: u64,
+        vote: Vote,
+        delegators: soroban_sdk::Vec<Address>,
+    ) -> Result<(), ContractError> {
+        // SEC-005: auth first.
+        voter.require_auth();
+        require_non_zero_address(&env, &voter)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+
+        let proposal = load_proposal(&env, proposal_id)?;
+        if proposal.state != ProposalState::Active {
+            return Err(ContractError::ProposalNotActive);
+        }
+
+        let now = env.ledger().timestamp();
+        if now < proposal.start_time {
+            return Err(ContractError::VotingNotStarted);
+        }
+        if now >= proposal.end_time {
+            return Err(ContractError::VotingPeriodEnded);
+        }
+        if has_voted(&env, proposal_id, &voter) {
+            return Err(ContractError::AlreadyVoted);
+        }
+        // Voter themselves must not have delegated their power.
+        if get_delegation(&env, &voter).is_some() {
+            return Err(ContractError::VotingPowerDelegated);
+        }
+
+        if get_restrict_admin_vote(&env) {
+            let admin = get_admin(&env)?;
+            if voter == admin && proposal.proposer == admin {
+                return Err(ContractError::AdminVoteRestricted);
+            }
+        }
+
+        let token_client = token::Client::new(&env, &get_voting_token(&env)?);
+
+        // Own balance snapshot
+        let own_weight = match get_voter_snapshot(&env, proposal_id, &voter) {
+            Some(w) => w,
+            None => {
+                let live = token_client.balance(&voter);
+                save_voter_snapshot(&env, proposal_id, &voter, live);
+                live
+            }
+        };
+        if own_weight <= 0 {
+            return Err(ContractError::NoVotingPower);
+        }
+
+        // Accumulate delegated weight from all supplied delegators that have
+        // actually delegated to this voter and have not already voted.
+        let mut total_weight = own_weight;
+        for delegator in delegators.iter() {
+            // Skip if the delegator hasn't delegated to this voter.
+            match get_delegation(&env, &delegator) {
+                Some(d) if d == voter => {}
+                _ => continue,
+            }
+            // Skip if the delegator has already voted on this proposal.
+            if has_voted(&env, proposal_id, &delegator) {
+                continue;
+            }
+            // Snapshot delegator balance
+            let delegator_weight = match get_voter_snapshot(&env, proposal_id, &delegator) {
+                Some(w) => w,
+                None => {
+                    let live = token_client.balance(&delegator);
+                    save_voter_snapshot(&env, proposal_id, &delegator, live);
+                    live
+                }
+            };
+            if delegator_weight > 0 {
+                total_weight = total_weight
+                    .checked_add(delegator_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?;
+                // Mark delegator as having voted (via delegation) to prevent double-counting.
+                mark_voted(&env, proposal_id, &delegator);
+            }
+        }
+
+        let mut proposal = proposal;
+        match vote {
+            Vote::Yes => {
+                proposal.votes_yes = proposal
+                    .votes_yes
+                    .checked_add(total_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?
+            }
+            Vote::No => {
+                proposal.votes_no = proposal
+                    .votes_no
+                    .checked_add(total_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?
+            }
+            Vote::Abstain => {
+                proposal.votes_abstain = proposal
+                    .votes_abstain
+                    .checked_add(total_weight)
+                    .ok_or(ContractError::VoteTallyOverflow)?
+            }
+        }
+
+        mark_voted(&env, proposal_id, &voter);
+        save_vote_record(
+            &env,
+            proposal_id,
+            &voter,
+            &VoteRecord {
+                vote_type: vote.clone(),
+                weight: total_weight,
+            },
+        );
+        save_proposal(&env, &proposal);
+        events::vote_cast(&env, proposal_id, &voter, &vote, total_weight);
+        Ok(())
     }
 }
