@@ -49,6 +49,7 @@ fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &A
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
     let id = client.create_proposal(
         &voter,
@@ -75,6 +76,7 @@ fn setup_active_proposal(env: &Env, client: &GovernanceContractClient, admin: &A
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
     client.create_proposal(
@@ -114,6 +116,7 @@ fn test_initialize() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -156,6 +159,7 @@ fn test_initialize_emits_event() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -458,6 +462,7 @@ fn test_execute_rejected_proposal_reverts() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
     // Create a proposal that will be rejected (no votes, below quorum)
@@ -973,6 +978,7 @@ fn test_reinit_by_original_admin_reverts() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
 }
 
@@ -991,6 +997,7 @@ fn test_reinit_by_new_address_reverts() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 }
@@ -1012,6 +1019,7 @@ fn test_reinit_by_zero_address_reverts() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 }
@@ -1037,6 +1045,7 @@ fn test_create_proposal_below_min_balance_reverts() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -1066,6 +1075,7 @@ fn test_create_proposal_at_min_balance_accepted() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -1103,6 +1113,7 @@ fn test_create_proposal_within_cooldown_reverts() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
 
     let proposer = Address::generate(&env);
@@ -1138,6 +1149,7 @@ fn test_create_proposal_after_cooldown_accepted() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -1415,6 +1427,7 @@ fn test_admin_cannot_vote_own_proposal_when_restricted() {
         &2_592_000_u64,
         &true,
         &0_u64,
+        &0_u64,
     );
     let id = client.create_proposal(
         &admin,
@@ -1447,6 +1460,7 @@ fn test_admin_can_vote_own_proposal_when_not_restricted() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
     let id = client.create_proposal(
         &admin,
@@ -1478,6 +1492,7 @@ fn test_non_admin_can_vote_when_admin_restricted() {
         &60_u64,
         &2_592_000_u64,
         &true,
+        &0_u64,
         &0_u64,
     );
     let proposer = Address::generate(&env);
@@ -1795,6 +1810,7 @@ fn test_cancel_reverts_on_non_active_proposal() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
 
     // Create and finalize a proposal to move it out of Active state
@@ -2032,6 +2048,7 @@ fn test_initialize_success() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
     assert_eq!(client.get_state(), ContractState::Ready);
 }
@@ -2052,6 +2069,7 @@ fn test_initialize_sets_version() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
     assert_eq!(client.get_version(), (1, 0, 0));
@@ -2074,6 +2092,7 @@ fn test_initialize_min_balance_enforced() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -2104,6 +2123,7 @@ fn test_initialize_restrict_admin_vote_enforced() {
         &60_u64,
         &2_592_000_u64,
         &true,
+        &0_u64,
         &0_u64,
     );
 
@@ -2136,6 +2156,7 @@ fn test_initialize_already_initialized_reverts() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
     client.initialize(
         &admin,
@@ -2145,6 +2166,7 @@ fn test_initialize_already_initialized_reverts() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 }
@@ -2170,6 +2192,7 @@ fn test_initialize_zero_admin_reverts() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
 }
 
@@ -2193,6 +2216,7 @@ fn test_initialize_zero_token_reverts() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 }
@@ -2374,6 +2398,7 @@ fn test_full_lifecycle_pass_and_execute() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
     assert_eq!(client.get_state(), ContractState::Ready);
 
@@ -2426,6 +2451,7 @@ fn test_full_lifecycle_reject_below_quorum() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
 
     let tok = votechain_token::TokenContractClient::new(&env, &token_id);
@@ -2463,6 +2489,7 @@ fn test_full_lifecycle_cancel() {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64,
     );
 
     let proposer = Address::generate(&env);
@@ -2498,6 +2525,7 @@ fn test_full_lifecycle_multiple_proposals_isolated() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -2563,6 +2591,7 @@ fn test_full_lifecycle_pause_and_unpause() {
         &60_u64,
         &2_592_000_u64,
         &false,
+        &0_u64,
         &0_u64,
     );
 
@@ -2755,3 +2784,134 @@ fn test_title_space_accepted() {
 }
 
 // ── end SEC-003 ───────────────────────────────────────────────────────────────
+
+// ── #44: max_active_proposals cap tests ──────────────────────────────────────
+
+/// Creating proposals up to the cap succeeds; one more fails with
+/// TooManyActiveProposals (#34).
+#[test]
+#[should_panic(expected = "Error(Contract, #34)")]
+fn test_max_active_proposals_cap_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let gov_id = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov_id);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    // Set cap to 3
+    client.initialize(
+        &admin,
+        &token_id,
+        &0_i128,
+        &0_u64,
+        &60_u64,
+        &2_592_000_u64,
+        &false,
+        &0_u64,
+        &3_u64, // max_active_proposals = 3
+    );
+
+    let proposer = Address::generate(&env);
+
+    // First 3 proposals should succeed
+    for _ in 0..3 {
+        client.create_proposal(
+            &proposer,
+            &String::from_str(&env, "Prop"),
+            &String::from_str(&env, "Description"),
+            &100,
+            &3600,
+        );
+    }
+
+    // 4th proposal must fail with TooManyActiveProposals
+    client.create_proposal(
+        &proposer,
+        &String::from_str(&env, "Over the limit"),
+        &String::from_str(&env, "Should fail"),
+        &100,
+        &3600,
+    );
+}
+
+/// Admin can raise the cap via update_max_proposals, allowing more proposals.
+#[test]
+fn test_admin_can_raise_max_proposals() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let gov_id = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov_id);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(
+        &admin,
+        &token_id,
+        &0_i128,
+        &0_u64,
+        &60_u64,
+        &2_592_000_u64,
+        &false,
+        &0_u64,
+        &2_u64, // cap = 2
+    );
+
+    let proposer = Address::generate(&env);
+
+    // Fill up to cap
+    client.create_proposal(
+        &proposer,
+        &String::from_str(&env, "Prop 1"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    client.create_proposal(
+        &proposer,
+        &String::from_str(&env, "Prop 2"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+
+    // Raise the cap to 5
+    client.update_max_proposals(&admin, &5_u64);
+    assert_eq!(client.get_max_active_proposals(), 5);
+
+    // Now a 3rd proposal succeeds
+    let id = client.create_proposal(
+        &proposer,
+        &String::from_str(&env, "Prop 3"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Active);
+}
+
+/// update_max_proposals called by a non-admin must revert with NotAdmin (#2).
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_update_max_proposals_non_admin_reverts() {
+    let t = setup_env();
+    let attacker = Address::generate(&t.env);
+    t.client.update_max_proposals(&attacker, &100_u64);
+}
+
+/// update_max_proposals with 0 must revert (0 cap blocks all proposals forever).
+#[test]
+#[should_panic]
+fn test_update_max_proposals_zero_reverts() {
+    let t = setup_env();
+    t.client.update_max_proposals(&t.admin, &0_u64);
+}
+
+/// Default cap (no max_active_proposals set at init) is 50.
+#[test]
+fn test_default_max_active_proposals_is_50() {
+    let t = setup_env();
+    assert_eq!(t.client.get_max_active_proposals(), 50);
+}
+
+// ── end #44 ───────────────────────────────────────────────────────────────────
