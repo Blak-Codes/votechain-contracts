@@ -1,4 +1,5 @@
 import express from "express";
+import path from "path";
 import { connectRedis } from "./middleware/redisCache";
 import healthRoutes from "./routes/health";
 import proposalRoutes from "./routes/proposals";
