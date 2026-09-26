@@ -1,67 +1,52 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { useTranslation } from "react-i18next";
 
-// Lazy-load page components for code splitting
-const ProposalList   = React.lazy(() => import("./pages/ProposalList"));
-const ProposalDetail = React.lazy(() => import("./pages/ProposalDetail"));
-const VotingPanel    = React.lazy(() => import("./pages/VotingPanel"));
-
-/** Shown for any unknown route. */
-function NotFound() {
-  return (
-    <main style={{ textAlign: "center", padding: "4rem 1rem" }}>
-      <h1>404 — Page Not Found</h1>
-      <p>The page you are looking for does not exist.</p>
-      <a href="/">← Back to Proposals</a>
-    </main>
-  );
-}
+/**
+ * Page components — all consume WalletContext / ProposalContext from
+ * providers in main.tsx (issue #10 — no prop-drilling).
+ */
+const ProposalList = React.lazy(() => import('./pages/ProposalList'));
+const ProposalDetail = React.lazy(() => import('./pages/ProposalDetail'));
+const VotingPanel = React.lazy(() => import('./pages/VotingPanel'));
+const VoteHistory = React.lazy(() => import('./pages/VoteHistory'));
 
 export default function App() {
+  const { t } = useTranslation();
+
   return (
-    <BrowserRouter>
-      <ErrorBoundary section="App">
-        <React.Suspense fallback={<p aria-live="polite">Loading…</p>}>
-          <Routes>
-            {/* Redirect root to proposals list */}
-            <Route path="/" element={<Navigate to="/proposals" replace />} />
+    <ErrorBoundary section="App">
+      {/* TransactionToast is rendered outside routing so it persists across navigation */}
+      <TransactionToast
+        tx={tx}
+        onRetry={tx.hash ? () => retry(tx.hash!) : undefined}
+        onDismiss={reset}
+      />
 
-            {/* Proposal list */}
-            <Route
-              path="/proposals"
-              element={
-                <ErrorBoundary section="ProposalList">
-                  <ProposalList />
-                </ErrorBoundary>
-              }
-            />
-
-            {/* Single proposal detail — deep-linkable by ID */}
-            <Route
-              path="/proposals/:id"
-              element={
-                <ErrorBoundary section="ProposalDetail">
-                  <ProposalDetail />
-                </ErrorBoundary>
-              }
-            />
-
-            {/* Voting panel */}
-            <Route
-              path="/vote"
-              element={
-                <ErrorBoundary section="VotingPanel">
-                  <VotingPanel />
-                </ErrorBoundary>
-              }
-            />
-
-            {/* 404 fallback */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+      <ErrorBoundary section="ProposalList">
+        <React.Suspense fallback={<p>{t("app.loading")}</p>}>
+          <ProposalList />
         </React.Suspense>
       </ErrorBoundary>
-    </BrowserRouter>
+
+      <ErrorBoundary section="ProposalDetail">
+        <React.Suspense fallback={<p>{t("app.loading")}</p>}>
+          <ProposalDetail />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary section="VotingPanel">
+        <React.Suspense fallback={<p>{t("app.loading")}</p>}>
+          <VotingPanel />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary section="VoteHistory">
+        <React.Suspense fallback={<p>Loading…</p>}>
+          <VoteHistory />
+        </React.Suspense>
+      </ErrorBoundary>
+    </ErrorBoundary>
   );
 }
