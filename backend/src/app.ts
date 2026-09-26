@@ -1,33 +1,75 @@
 import express from "express";
 import path from "path";
 import { connectRedis } from "./middleware/redisCache";
+import healthRoutes from "./routes/health";
 import proposalRoutes from "./routes/proposals";
+import {
+  notFoundHandler,
+  globalErrorHandler,
+} from "./middleware/errorHandler";
+
+// ---------------------------------------------------------------------------
+// Environment variable validation
+// ---------------------------------------------------------------------------
+// Validates required env vars at startup so the process fails fast with a
+// clear diagnostic instead of a cryptic runtime panic later.
+
+interface EnvConfig {
+  PORT: string;
+  REDIS_URL: string;
+}
+
+function validateEnv(): EnvConfig {
+  const required: Array<keyof EnvConfig> = ["REDIS_URL"];
+  const missing: string[] = [];
+
+  for (const key of required) {
+    if (!process.env[key]) {
+      missing.push(key);
+    }
+  }
+
+  if (missing.length > 0) {
+    console.error(
+      "[startup] Missing required environment variables:\n" +
+        missing.map((k) => `  • ${k}`).join("\n") +
+        "\n\nSet these variables before starting the server. " +
+        "See .env.example for reference."
+    );
+    process.exit(1);
+  }
+
+  return {
+    PORT: process.env.PORT ?? "3001",
+    REDIS_URL: process.env.REDIS_URL!,
+  };
+}
+
+const env = validateEnv();
+
+// ---------------------------------------------------------------------------
+// App setup
+// ---------------------------------------------------------------------------
 
 const app = express();
+app.use(requestTracing);
 app.use(express.json());
+
+// Health and readiness probes — mounted BEFORE rate-limiting and auth so
+// load balancers and orchestrators can always reach them without credentials.
+app.use("/", healthRoutes);
+
 app.use("/api", proposalRoutes);
 
-// ── Swagger UI (development only) ─────────────────────────────────────────────
-// Start the server with ENABLE_SWAGGER=true to mount the Swagger UI at /docs.
-// The UI is powered by swagger-ui-express and reads the canonical openapi.yml.
-if (process.env.ENABLE_SWAGGER === "true") {
-  // Dynamic require so the dependency is optional in production images.
-  /* eslint-disable @typescript-eslint/no-var-requires */
-  const swaggerUi = require("swagger-ui-express") as typeof import("swagger-ui-express");
-  const YAML = require("js-yaml") as typeof import("js-yaml");
-  const fs = require("fs") as typeof import("fs");
-  /* eslint-enable @typescript-eslint/no-var-requires */
+// Catch unmatched routes — must come after all real route registrations.
+app.use(notFoundHandler);
 
-  const openapiPath = path.resolve(__dirname, "../../api/openapi.yml");
-  const swaggerDocument = YAML.load(fs.readFileSync(openapiPath, "utf8")) as Record<string, unknown>;
-
-  app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-  console.log("[swagger] UI available at /docs");
-}
+// Global error handler — must be the very last middleware registered.
+app.use(globalErrorHandler);
 
 const PORT = process.env.PORT ?? 3001;
 
-connectRedis().then(() => {
+connectRedis(env.REDIS_URL).then(() => {
   app.listen(PORT, () => console.log(`[server] listening on :${PORT}`));
 });
 

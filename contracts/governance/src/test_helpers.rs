@@ -50,6 +50,7 @@ pub fn setup_env() -> TestEnv {
         &2_592_000_u64,
         &false,
         &0_u64,
+        &0_u64, // max_active_proposals = 0 → use default of 50
     );
 
     TestEnv {
