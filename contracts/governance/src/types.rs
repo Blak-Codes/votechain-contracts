@@ -141,6 +141,10 @@ pub struct Proposal {
     /// Earliest Unix timestamp at which the proposal may be executed.
     /// Set to `end_time + timelock_duration` when the proposal passes; 0 otherwise.
     pub execute_after: u64,
+    /// Snapshot of the total token supply at proposal creation time.
+    /// Used for quorum validation at finalization to prevent supply changes
+    /// from making a previously-valid quorum unreachable or too easy.
+    pub total_supply_snapshot: i128,
 }
 
 /// Pending multi-sig action types.
@@ -298,6 +302,10 @@ pub enum DataKey {
     /// Design note: only one delegation per delegator is allowed (no chaining).
     /// If a delegator wants to change their delegate they must first undelegate.
     Delegation(Address),
+
+    /// Stores the WASM hash of the previous contract version for rollback purposes (instance storage).
+    /// Key space: singleton — only one `PreviousWasmHash` entry exists.
+    PreviousWasmHash,
 }
 
 #[contracttype]

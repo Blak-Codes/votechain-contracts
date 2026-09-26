@@ -388,3 +388,15 @@ pub fn clear_delegation(env: &Env, delegator: &Address) {
         .persistent()
         .remove(&DataKey::Delegation(delegator.clone()));
 }
+
+/// Stores the previous WASM hash for rollback purposes.
+pub fn set_previous_wasm_hash(env: &Env, hash: &soroban_sdk::BytesN<32>) {
+    env.storage()
+        .instance()
+        .set(&DataKey::PreviousWasmHash, hash);
+}
+
+/// Returns the previous WASM hash, if any.
+pub fn get_previous_wasm_hash(env: &Env) -> Option<soroban_sdk::BytesN<32>> {
+    env.storage().instance().get(&DataKey::PreviousWasmHash)
+}

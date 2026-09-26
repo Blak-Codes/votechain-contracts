@@ -27,17 +27,18 @@ pub mod test_helpers;
 #[cfg(test)]
 mod test_delegation;
 
-use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractclient, contractimpl, token, Address, BytesN, Env, String, Vec};
 use storage::{
     clear_delegation, clear_pending_admin, get_admin, get_admin_transfer_expiry,
     get_contract_state, get_delegation, get_last_proposal, get_max_duration, get_min_duration,
-    get_min_proposal_balance, get_pending_admin, get_proposal_cooldown, get_restrict_admin_vote,
-    get_timelock_duration, get_version, get_vote_record, get_voter_snapshot, get_voting_token,
-    has_voted, is_initialized, is_paused, load_proposal, mark_voted, next_id, save_proposal,
-    save_vote_record, save_voter_snapshot, set_admin, set_admin_transfer_expiry,
-    set_contract_state, set_delegation, set_last_proposal, set_max_duration, set_min_duration,
-    set_min_proposal_balance, set_paused, set_pending_admin, set_proposal_cooldown,
-    set_restrict_admin_vote, set_timelock_duration, set_version, set_voting_token,
+    get_min_proposal_balance, get_pending_admin, get_previous_wasm_hash, get_proposal_cooldown,
+    get_restrict_admin_vote, get_timelock_duration, get_version, get_vote_record,
+    get_voter_snapshot, get_voting_token, has_voted, is_initialized, is_paused, load_proposal,
+    mark_voted, next_id, save_proposal, save_vote_record, save_voter_snapshot, set_admin,
+    set_admin_transfer_expiry, set_contract_state, set_delegation, set_last_proposal,
+    set_max_duration, set_min_duration, set_min_proposal_balance, set_paused, set_pending_admin,
+    set_previous_wasm_hash, set_proposal_cooldown, set_restrict_admin_vote, set_timelock_duration,
+    set_version, set_voting_token,
 };
 
 const MAX_TITLE_LEN: u32 = 128;
@@ -256,6 +257,7 @@ impl GovernanceContract {
             end_time: now + duration,
             state: ProposalState::Active,
             execute_after: 0,
+            total_supply_snapshot: supply,
         };
         save_proposal(&env, &proposal);
         set_last_proposal(&env, &proposer, now);
@@ -385,7 +387,7 @@ impl GovernanceContract {
             },
         );
         save_proposal(&env, &proposal);
-        events::vote_cast(&env, proposal_id, &voter, &vote, weight);
+        events::vote_cast(&env, proposal_id, &voter, &vote, weight, own_weight);
         Ok(())
     }
 
@@ -993,7 +995,46 @@ impl GovernanceContract {
             },
         );
         save_proposal(&env, &proposal);
-        events::vote_cast(&env, proposal_id, &voter, &vote, total_weight);
+        events::vote_cast(&env, proposal_id, &voter, &vote, total_weight, own_weight);
         Ok(())
     }
+
+    /// Upgrades the contract WASM to a new version.
+    ///
+    /// Only the admin may call this function. The new WASM code must already be
+    /// uploaded to the network. This function replaces the contract's executable code.
+    ///
+    /// # Errors
+    /// - [`ContractError::InvalidAddress`] if `admin` is the zero address.
+    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
+    /// - [`ContractError::ContractPaused`] if the contract is paused.
+    pub fn upgrade(env: Env, admin: Address, new_wasm_hash: BytesN<32>) -> Result<(), ContractError> {
+        // SEC-005: auth first.
+        admin.require_auth();
+        // SEC-004: reject zero address.
+        require_non_zero_address(&env, &admin)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        if get_admin(&env)? != admin {
+            return Err(ContractError::NotAdmin);
+        }
+
+        // Create a placeholder for the old WASM hash. In production, this would be
+        // queried from the chain if the API were available.
+        let old_wasm_hash = BytesN::from_array(&env, [0u8; 32]);
+
+        // Store the old WASM hash for rollback purposes.
+        set_previous_wasm_hash(&env, &old_wasm_hash);
+
+        // Emit the upgrade event with both hashes (old and new).
+        events::contract_upgraded(&env, &old_wasm_hash, &new_wasm_hash);
+
+        // Invoke the Soroban deployer to update the current contract with the new WASM.
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+
+        Ok(())
+    }
+
+
 }

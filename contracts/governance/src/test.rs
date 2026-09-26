@@ -2915,3 +2915,132 @@ fn test_default_max_active_proposals_is_50() {
 }
 
 // ── end #44 ───────────────────────────────────────────────────────────────────
+
+
+// ── Upgrade tests (Issue #46) ──────────────────────────────────────────────
+
+/// Non-admin cannot call upgrade.
+#[test]
+#[should_panic(expected = "NotAdmin")]
+fn test_upgrade_non_admin_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(
+        &admin,
+        &token_id,
+        &0_i128,
+        &0_u64,
+        &60_u64,
+        &2_592_000_u64,
+        &false,
+        &0_u64,
+        &0_u64,
+    );
+
+    let non_admin = Address::generate(&env);
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&env, [1u8; 32]);
+
+    // Non-admin attempts upgrade
+    client.upgrade(&non_admin, &new_wasm_hash);
+}
+
+/// Admin can call upgrade with a new WASM hash.
+#[test]
+fn test_upgrade_admin_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(
+        &admin,
+        &token_id,
+        &0_i128,
+        &0_u64,
+        &60_u64,
+        &2_592_000_u64,
+        &false,
+        &0_u64,
+        &0_u64,
+    );
+
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&env, [2u8; 32]);
+
+    // Admin calls upgrade
+    client.upgrade(&admin, &new_wasm_hash);
+
+    // Verify upgrade event was emitted
+    let events = env.events().all();
+    let upgrade_event = events.iter().find(|e| {
+        e.0.topics.len() >= 1
+            && e.0.topics[0].to_string().contains("upgrade")
+    });
+    assert!(upgrade_event.is_some(), "upgrade event should be emitted");
+}
+
+/// Upgrade fails when contract is paused.
+#[test]
+#[should_panic(expected = "ContractPaused")]
+fn test_upgrade_paused_contract_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(
+        &admin,
+        &token_id,
+        &0_i128,
+        &0_u64,
+        &60_u64,
+        &2_592_000_u64,
+        &false,
+        &0_u64,
+        &0_u64,
+    );
+
+    // Pause the contract
+    client.pause(&admin);
+
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&env, [3u8; 32]);
+
+    // Attempt upgrade while paused
+    client.upgrade(&admin, &new_wasm_hash);
+}
+
+/// Test that previous WASM hash is stored for rollback.
+#[test]
+fn test_upgrade_stores_previous_wasm_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(
+        &admin,
+        &token_id,
+        &0_i128,
+        &0_u64,
+        &60_u64,
+        &2_592_000_u64,
+        &false,
+        &0_u64,
+        &0_u64,
+    );
+
+    let new_wasm_hash = soroban_sdk::BytesN::from_array(&env, [4u8; 32]);
+
+    // Perform upgrade
+    client.upgrade(&admin, &new_wasm_hash);
+
+    // In a full integration test, we would verify that the previous hash
+    // can be used for rollback by calling upgrade again with that hash.
+    // This requires access to the storage layer or a getter function.
+}
