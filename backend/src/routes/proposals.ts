@@ -1,5 +1,5 @@
 /**
- * Proposal routes with Redis caching applied.
+ * Proposal routes with Redis caching and zod request validation applied.
  * Replace the stub handlers with real Stellar RPC / indexer calls.
  */
 
