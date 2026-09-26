@@ -14,6 +14,11 @@ if (import.meta.env.DEV) {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    {/* issue #10 — both contexts available application-wide */}
+    <WalletProvider>
+      <ProposalProvider>
+        <App />
+      </ProposalProvider>
+    </WalletProvider>
   </React.StrictMode>
 );

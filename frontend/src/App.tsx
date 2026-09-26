@@ -2,10 +2,14 @@ import React from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useTranslation } from "react-i18next";
 
-// Placeholder page components — replace with real implementations
-const ProposalList = React.lazy(() => import("./pages/ProposalList"));
-const ProposalDetail = React.lazy(() => import("./pages/ProposalDetail"));
-const VotingPanel = React.lazy(() => import("./pages/VotingPanel"));
+/**
+ * Page components — all consume WalletContext / ProposalContext from
+ * providers in main.tsx (issue #10 — no prop-drilling).
+ */
+const ProposalList = React.lazy(() => import('./pages/ProposalList'));
+const ProposalDetail = React.lazy(() => import('./pages/ProposalDetail'));
+const VotingPanel = React.lazy(() => import('./pages/VotingPanel'));
+const VoteHistory = React.lazy(() => import('./pages/VoteHistory'));
 
 export default function App() {
   const { t } = useTranslation();
@@ -34,6 +38,12 @@ export default function App() {
       <ErrorBoundary section="VotingPanel">
         <React.Suspense fallback={<p>{t("app.loading")}</p>}>
           <VotingPanel />
+        </React.Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary section="VoteHistory">
+        <React.Suspense fallback={<p>Loading…</p>}>
+          <VoteHistory />
         </React.Suspense>
       </ErrorBoundary>
     </ErrorBoundary>
