@@ -1,6 +1,6 @@
 .PHONY: build test fmt fmt-check lint clean deploy-testnet check-stellar-cli help
 
-STELLAR_CLI_VERSION := 21.6.0
+STELLAR_CLI_VERSION := 22.8.2
 
 ## build: Compile contracts to WASM (release)
 build:
@@ -35,11 +35,11 @@ check-stellar-cli:
 	@INSTALLED=$$(stellar --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1); \
 	if [ -z "$$INSTALLED" ]; then \
 		echo "ERROR: stellar-cli not found. Install with:"; \
-		echo "  cargo install --locked stellar-cli@$(STELLAR_CLI_VERSION) --features opt"; \
+		echo "  cargo install --locked stellar-cli@$(STELLAR_CLI_VERSION)"; \
 		exit 1; \
 	elif [ "$$INSTALLED" != "$(STELLAR_CLI_VERSION)" ]; then \
 		echo "ERROR: stellar-cli $$INSTALLED found, but $(STELLAR_CLI_VERSION) is required."; \
-		echo "  cargo install --locked stellar-cli@$(STELLAR_CLI_VERSION) --features opt"; \
+		echo "  cargo install --locked stellar-cli@$(STELLAR_CLI_VERSION)"; \
 		exit 1; \
 	else \
 		echo "stellar-cli $(STELLAR_CLI_VERSION) OK"; \

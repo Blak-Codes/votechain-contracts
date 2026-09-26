@@ -2,92 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-env:
-  # Default maximum allowed wasm size in bytes (override in repo settings or workflow_dispatch)
-  MAX_WASM_BYTES: 200000
-
-jobs:
-  checks:
-    name: Format, Lint, Build + WASM size
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-
-      - name: Add wasm target
-        run: |
-          rustup target add wasm32-unknown-unknown
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Rustfmt check
-        run: |
-          cargo fmt --all -- --check
-
-      - name: Clippy (deny warnings)
-        run: |
-          cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Build wasm artifacts
-        run: |
-          # Build workspace release artifacts for wasm target
-          cargo build --workspace --release --target wasm32-unknown-unknown
-
-      - name: Check compiled WASM sizes
-        env:
-          MAX_WASM_BYTES: ${{ env.MAX_WASM_BYTES }}
-        run: |
-          set -euo pipefail
-          echo "Using MAX_WASM_BYTES=${MAX_WASM_BYTES}"
-          found=0
-          failures=0
-          # Find wasm files under target directories
-          while IFS= read -r -d '' wasmfile; do
-            found=1
-            size=$(stat -c%s "$wasmfile")
-            echo "Found $wasmfile — ${size} bytes"
-            if [ "$size" -gt "$MAX_WASM_BYTES" ]; then
-              echo "ERROR: $wasmfile (${size} bytes) exceeds MAX_WASM_BYTES=${MAX_WASM_BYTES}" >&2
-              failures=$((failures+1))
-            fi
-          done < <(find . -type f -path '*/target/wasm32-unknown-unknown/release/*.wasm' -print0)
-
-          if [ "$found" -eq 0 ]; then
-            echo "No wasm artifacts found. Ensure contracts build to wasm target." >&2
-            exit 1
-          fi
-
-          if [ "$failures" -gt 0 ]; then
-            echo "One or more wasm artifacts exceed the allowed size limit." >&2
-            exit 2
-          fi
-name: CI
-on:
-  push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+
 env:
   CARGO_TERM_COLOR: always
-  STELLAR_CLI_VERSION: "21.6.0"
+  STELLAR_CLI_VERSION: "22.8.2"
+
 jobs:
   license-check:
     name: License Headers
@@ -113,12 +35,12 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -177,9 +99,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -201,12 +123,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - run: cargo install --locked stellar-cli --features opt
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -216,6 +137,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-wasm-
             ${{ runner.os }}-cargo-
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli@${{ env.STELLAR_CLI_VERSION }}
       - run: stellar contract build
       - name: Check WASM binary sizes
         run: |
@@ -231,7 +154,6 @@ jobs:
           echo "governance.wasm : $gov_size bytes (limit: $GOV_LIMIT)"
           echo "token.wasm      : $tok_size bytes (limit: $TOK_LIMIT)"
 
-          # Write size log artifact
           mkdir -p wasm-size-history
           echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) governance=$gov_size token=$tok_size" \
             >> wasm-size-history/sizes.log
@@ -262,7 +184,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      - run: cargo install --locked stellar-cli@${{ env.STELLAR_CLI_VERSION }} --features opt
       - uses: actions/cache@v4
         with:
           path: |
@@ -273,5 +194,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-wasm-
             ${{ runner.os }}-cargo-
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli@${{ env.STELLAR_CLI_VERSION }}
       - name: Run WASM validity tests
         run: bash scripts/test_wasm.sh

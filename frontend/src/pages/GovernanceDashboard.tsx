@@ -4,15 +4,6 @@ import React, { useEffect, useRef, useState } from "react";
 
 type ProposalState = "Active" | "Passed" | "Rejected" | "Executed" | "Cancelled";
 
-type Proposal = {
-  id: number;
-  state: ProposalState;
-  votes_yes: number;
-  votes_no: number;
-  votes_abstain: number;
-  quorum: number;
-};
-
 type VoterStat = { address: string; total_weight: number };
 
 type Stats = {

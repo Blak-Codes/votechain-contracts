@@ -158,19 +158,19 @@ Proposal reaches terminal state
 ### Prerequisites
 
 - Rust 1.75+ with `wasm32-unknown-unknown` target
-- Stellar CLI **21.6.0** (pinned — see [Upgrading Stellar CLI](#upgrading-stellar-cli))
+- Stellar CLI **22.8.2** (pinned — see [Upgrading Stellar CLI](#upgrading-stellar-cli))
 - Docker & Docker Compose (optional, for reproducible environment)
 
 ### Installing Stellar CLI
 
 ```bash
-cargo install --locked stellar-cli@21.6.0 --features opt
+cargo install --locked stellar-cli@22.8.2
 ```
 
 Verify the installed version:
 
 ```bash
-stellar --version   # must print 21.6.0
+stellar --version   # must print 22.8.2
 # or
 make check-stellar-cli
 ```
@@ -1477,6 +1477,7 @@ We welcome contributions from the community. Please see [CONTRIBUTING.md](CONTRI
 ### Documentation
 
 - **[GETTING_STARTED.md](docs/GETTING_STARTED.md)** — Step-by-step setup guide
+- **[API Reference](docs/api-reference.md)** — Complete REST API reference (OpenAPI 3.1)
 - **[Proposal Lifecycle](docs/lifecycle.md)** — Detailed state diagram and transitions
 - **[Storage Model](docs/storage.md)** — Storage tier strategy and optimization
 - **[Upgrading](docs/upgrading.md)** — Contract upgrade procedures
