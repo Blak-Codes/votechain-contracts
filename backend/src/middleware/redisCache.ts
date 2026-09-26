@@ -25,17 +25,22 @@ export async function connectRedis(url = process.env.REDIS_URL ?? "redis://local
 
 // ── Metrics ────────────────────────────────────────────────────────────────
 
-const metrics = { hits: 0, misses: 0 };
+const metrics = { hits: 0, misses: 0, invalidations: 0 };
 
 export function getCacheMetrics() {
-  return { ...metrics, hitRate: metrics.hits + metrics.misses === 0 ? 0 : metrics.hits / (metrics.hits + metrics.misses) };
+  const total = metrics.hits + metrics.misses;
+  return {
+    ...metrics,
+    hitRate: total === 0 ? 0 : metrics.hits / total,
+    missRate: total === 0 ? 0 : metrics.misses / total,
+  };
 }
 
 // ── TTL constants ──────────────────────────────────────────────────────────
 
 const TTL = {
-  PROPOSAL_LIST: 30,   // seconds
-  PROPOSAL_ITEM: 10,   // seconds
+  PROPOSAL_LIST: parseInt(process.env.PROPOSAL_LIST_TTL ?? '30', 10),
+  PROPOSAL_ITEM: parseInt(process.env.PROPOSAL_ITEM_TTL ?? '10', 10),
 };
 
 // ── Cache key helpers ──────────────────────────────────────────────────────
@@ -110,6 +115,7 @@ export async function invalidateProposalCache(id?: string | number) {
   if (id !== undefined) keys.push(KEY.item(id));
   try {
     await redis.del(keys);
+    metrics.invalidations++;
     console.log("[redis] invalidated keys:", keys);
   } catch (err) {
     console.error("[redis] del error:", err);
