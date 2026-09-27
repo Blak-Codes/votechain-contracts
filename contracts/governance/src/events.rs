@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::types::{ProposalState, Vote};
+use crate::types::{ConfigKey, ProposalState, Vote};
 use soroban_sdk::{symbol_short, Address, Env};
 
 /// # Event Schema
@@ -157,11 +157,13 @@ pub fn delegation_revoked(env: &Env, delegator: &Address) {
         .publish((symbol_short!("delegrevk"),), delegator.clone());
 }
 
-/// Emits an `upgraded` event when the contract WASM is upgraded.
+/// Emits a `paramoveride` event when the admin uses emergency override to change parameters.
 ///
-/// Topics: `("upgraded",)`
-/// Data: `(old_wasm_hash: BytesN<32>, new_wasm_hash: BytesN<32>)`
-pub fn contract_upgraded(env: &Env, old_wasm_hash: &soroban_sdk::BytesN<32>, new_wasm_hash: &soroban_sdk::BytesN<32>) {
-    env.events()
-        .publish((symbol_short!("upgrade"),), (old_wasm_hash.clone(), new_wasm_hash.clone()));
+/// Topics: `("paramoveride",)`
+/// Data: `(admin: Address, config_key: ConfigKey, new_value: u64)`
+pub fn admin_parameter_override(env: &Env, admin: &Address, config_key: &ConfigKey, new_value: u64) {
+    env.events().publish(
+        (symbol_short!("paramoveride"),),
+        (admin.clone(), config_key.clone(), new_value),
+    );
 }

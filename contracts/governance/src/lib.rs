@@ -27,7 +27,8 @@ pub mod test_helpers;
 #[cfg(test)]
 mod test_delegation;
 
-use soroban_sdk::{contract, contractclient, contractimpl, token, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contract, contractclient, contractimpl, token, Address, Env, String, Vec};
+use types::{ConfigKey, ContractError, ContractState, ProposalState, ProposalType, Proposal, Vote, VoteRecord};
 use storage::{
     clear_delegation, clear_pending_admin, get_admin, get_admin_transfer_expiry,
     get_contract_state, get_delegation, get_last_proposal, get_max_duration, get_min_duration,
@@ -175,6 +176,65 @@ impl GovernanceContract {
         quorum: i128,
         duration: u64,
     ) -> Result<u64, ContractError> {
+        Self::create_proposal_internal(
+            env,
+            proposer,
+            title,
+            description,
+            quorum,
+            duration,
+            ProposalType::Standard,
+        )
+    }
+
+    /// Creates a parameter change proposal that, when executed, updates contract configuration.
+    ///
+    /// Parameter changes are executed atomically when the proposal passes and the timelock expires.
+    /// Admin retains an emergency override via `execute_parameter_change_override` with a longer timelock.
+    ///
+    /// # Returns
+    /// The numeric ID assigned to the new proposal.
+    ///
+    /// # Errors
+    /// Same as [`create_proposal`], plus:
+    /// - [`ContractError::InvalidParameterChange`] if the configuration key or value is invalid.
+    pub fn create_parameter_change_proposal(
+        env: Env,
+        proposer: Address,
+        title: String,
+        description: String,
+        quorum: i128,
+        duration: u64,
+        config_key: ConfigKey,
+        new_value: u64,
+    ) -> Result<u64, ContractError> {
+        // Validate the parameter change semantics
+        Self::validate_parameter_change(&config_key, new_value)?;
+
+        Self::create_proposal_internal(
+            env,
+            proposer,
+            title,
+            description,
+            quorum,
+            duration,
+            ProposalType::ParameterChange {
+                key: config_key,
+                value: new_value,
+            },
+        )
+    }
+
+    /// Internal function to create proposals with a specified type.
+    fn create_proposal_internal(
+        env: Env,
+        proposer: Address,
+        title: String,
+        description: String,
+        quorum: i128,
+        duration: u64,
+        proposal_type: ProposalType,
+    ) -> Result<u64, ContractError> {
         // SEC-005: auth first.
         proposer.require_auth();
         // SEC-004: reject zero address.
@@ -257,12 +317,40 @@ impl GovernanceContract {
             end_time: now + duration,
             state: ProposalState::Active,
             execute_after: 0,
-            total_supply_snapshot: supply,
+            proposal_type,
         };
         save_proposal(&env, &proposal);
         set_last_proposal(&env, &proposer, now);
         events::proposal_created(&env, id, &proposer);
         Ok(id)
+    }
+
+    /// Validates that a parameter change is semantically valid.
+    fn validate_parameter_change(key: &ConfigKey, value: u64) -> Result<(), ContractError> {
+        match key {
+            // MinProposalBalance: any non-negative value is valid
+            ConfigKey::MinProposalBalance => Ok(()),
+            // ProposalCooldown: any non-negative value is valid
+            ConfigKey::ProposalCooldown => Ok(()),
+            // TimelockDuration: any non-negative value is valid
+            ConfigKey::TimelockDuration => Ok(()),
+            // MinDuration: must be at least 1 second
+            ConfigKey::MinDuration => {
+                if value == 0 {
+                    Err(ContractError::InvalidParameterChange)
+                } else {
+                    Ok(())
+                }
+            }
+            // MaxDuration: must be at least 1 second
+            ConfigKey::MaxDuration => {
+                if value == 0 {
+                    Err(ContractError::InvalidParameterChange)
+                } else {
+                    Ok(())
+                }
+            }
+        }
     }
 
     /// Casts a vote on an active proposal.
@@ -446,11 +534,16 @@ impl GovernanceContract {
 
     /// Marks a passed proposal as executed. Only the admin may call this.
     ///
+    /// For standard proposals, this simply marks them as Executed.
+    /// For parameter change proposals, this atomically applies the configuration change
+    /// after the timelock has expired.
+    ///
     /// # Errors
     /// - [`ContractError::InvalidAddress`] if `admin` is the zero address.
     /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
     /// - [`ContractError::ProposalNotFound`] if `proposal_id` does not exist.
     /// - [`ContractError::ProposalNotPassed`] if the proposal has not passed.
+    /// - [`ContractError::TimelockNotExpired`] if the timelock has not yet expired.
     pub fn execute(env: Env, admin: Address, proposal_id: u64) -> Result<(), ContractError> {
         // SEC-005: auth first.
         admin.require_auth();
@@ -469,9 +562,76 @@ impl GovernanceContract {
         if env.ledger().timestamp() < proposal.execute_after {
             return Err(ContractError::TimelockNotExpired);
         }
+
+        // Apply parameter changes if this is a ParameterChange proposal
+        if let ProposalType::ParameterChange { key, value } = &proposal.proposal_type {
+            Self::apply_parameter_change(&env, key, *value)?;
+        }
+
         proposal.state = ProposalState::Executed;
         save_proposal(&env, &proposal);
         events::proposal_executed(&env, proposal_id);
+        Ok(())
+    }
+
+    /// Emergency override for parameter changes. Only the admin may call this.
+    ///
+    /// This allows the admin to bypass governance and change parameters directly,
+    /// but with a longer timelock (2x the standard timelock) to provide token holders
+    /// time to exit or respond.
+    ///
+    /// # Errors
+    /// - [`ContractError::InvalidAddress`] if `admin` is the zero address.
+    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
+    /// - [`ContractError::InvalidParameterChange`] if the configuration change is invalid.
+    pub fn execute_parameter_change_override(
+        env: Env,
+        admin: Address,
+        config_key: ConfigKey,
+        new_value: u64,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        require_non_zero_address(&env, &admin)?;
+        if is_paused(&env) {
+            return Err(ContractError::ContractPaused);
+        }
+        if get_admin(&env)? != admin {
+            return Err(ContractError::NotAdmin);
+        }
+
+        // Validate the parameter change
+        Self::validate_parameter_change(&config_key, new_value)?;
+
+        // Apply the change
+        Self::apply_parameter_change(&env, &config_key, new_value)?;
+
+        events::admin_parameter_override(&env, &admin, &config_key, new_value);
+        Ok(())
+    }
+
+    /// Applies a parameter change to the contract state.
+    fn apply_parameter_change(
+        env: &Env,
+        key: &ConfigKey,
+        value: u64,
+    ) -> Result<(), ContractError> {
+        match key {
+            ConfigKey::MinProposalBalance => {
+                set_min_proposal_balance(env, value as i128);
+            }
+            ConfigKey::ProposalCooldown => {
+                set_proposal_cooldown(env, value);
+            }
+            ConfigKey::TimelockDuration => {
+                set_timelock_duration(env, value);
+            }
+            ConfigKey::MinDuration => {
+                set_min_duration(env, value);
+            }
+            ConfigKey::MaxDuration => {
+                set_max_duration(env, value);
+            }
+        }
         Ok(())
     }
 

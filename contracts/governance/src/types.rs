@@ -91,9 +91,35 @@ pub enum ContractError {
     CannotDelegateToSelf = 35,
     /// 36 – Cannot delegate to the zero address
     InvalidDelegateAddress = 36,
+    /// 37 – Invalid parameter change proposal (e.g., invalid ConfigKey or semantic error)
+    InvalidParameterChange = 37,
+    /// 38 – Parameter change is not supported for the given proposal type
+    ParameterChangeNotSupported = 38,
+    /// 39 – Token is already registered in multi-token voting
+    TokenAlreadyRegistered = 39,
+    /// 40 – Token is not registered in multi-token voting
+    TokenNotRegistered = 40,
+    /// 41 – Cannot remove the last voting token (DAO must have at least one)
+    CannotRemoveLastToken = 41,
+    /// 42 – Weight multiplier must be greater than zero
+    InvalidWeightMultiplier = 42,
 }
 
-/// Lifecycle state of the governance contract itself.
+/// Different types of proposals the governance contract supports.
+/// Standard proposals affect specific proposals; parameter change proposals update contract configuration.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ProposalType {
+    /// Standard governance proposal (default)
+    Standard,
+    /// Parameter change proposal that updates contract configuration when executed
+    ParameterChange {
+        key: ConfigKey,
+        /// New value as a 64-bit unsigned integer (suitable for durations, balances, etc.)
+        /// The contract enforces semantic validation based on the ConfigKey.
+        value: u64,
+    },
+}
 ///
 /// - `Uninitialized`: the contract has been deployed but `initialize` has not
 ///   yet been called. No governance operations are possible.
@@ -124,6 +150,24 @@ pub enum Vote {
     Abstain,
 }
 
+/// Configuration keys that can be changed via governance proposals.
+/// These are used in ParameterChange proposals to identify which parameter is being updated.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ConfigKey {
+    /// Minimum token balance required to create a proposal
+    MinProposalBalance = 1,
+    /// Minimum seconds between consecutive proposals per address
+    ProposalCooldown = 2,
+    /// Mandatory delay (seconds) between proposal passing and execution
+    TimelockDuration = 3,
+    /// Minimum allowed voting duration in seconds
+    MinDuration = 4,
+    /// Maximum allowed voting duration in seconds
+    MaxDuration = 5,
+}
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct Proposal {
@@ -141,10 +185,8 @@ pub struct Proposal {
     /// Earliest Unix timestamp at which the proposal may be executed.
     /// Set to `end_time + timelock_duration` when the proposal passes; 0 otherwise.
     pub execute_after: u64,
-    /// Snapshot of the total token supply at proposal creation time.
-    /// Used for quorum validation at finalization to prevent supply changes
-    /// from making a previously-valid quorum unreachable or too easy.
-    pub total_supply_snapshot: i128,
+    /// Type of proposal (Standard or ParameterChange)
+    pub proposal_type: ProposalType,
 }
 
 /// Pending multi-sig action types.
@@ -178,6 +220,18 @@ pub struct PendingMultisigAction {
     pub approvals: soroban_sdk::Vec<Address>,
     /// Unix timestamp after which this action expires.
     pub expires_at: u64,
+}
+
+/// Configuration for a voting token in multi-asset voting.
+/// Stores a token contract address and its relative weight multiplier.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VotingTokenConfig {
+    /// Address of the token contract (e.g., USDC, governance NFT)
+    pub token_address: Address,
+    /// Weight multiplier for votes from this token (e.g., 100 = 1x, 200 = 2x)
+    /// Allows different tokens to have different voting influence
+    pub weight_multiplier: u64,
 }
 ///
 /// Every storage entry is keyed by a variant of this enum.  Because Soroban
@@ -303,9 +357,12 @@ pub enum DataKey {
     /// If a delegator wants to change their delegate they must first undelegate.
     Delegation(Address),
 
-    /// Stores the WASM hash of the previous contract version for rollback purposes (instance storage).
-    /// Key space: singleton — only one `PreviousWasmHash` entry exists.
-    PreviousWasmHash,
+    /// List of registered voting tokens with per-token weight multipliers (instance storage).
+    /// Stored as Vec<VotingTokenConfig>. Used for multi-asset voting support (v0.2.0+).
+    /// Key space: singleton — only one `VotingTokens` entry exists.
+    /// For backward compatibility, single-token DAOs store a token in `VotingToken`
+    /// and may also have a corresponding entry in `VotingTokens`.
+    VotingTokens,
 }
 
 #[contracttype]
