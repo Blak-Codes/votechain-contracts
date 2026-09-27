@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::types::{ProposalState, Vote};
+use crate::types::{ConfigKey, ProposalState, Vote};
 use soroban_sdk::{symbol_short, Address, Env};
 
 /// # Event Schema
@@ -155,4 +155,15 @@ pub fn delegation_set(env: &Env, delegator: &Address, delegate: &Address) {
 pub fn delegation_revoked(env: &Env, delegator: &Address) {
     env.events()
         .publish((symbol_short!("delegrevk"),), delegator.clone());
+}
+
+/// Emits a `paramoveride` event when the admin uses emergency override to change parameters.
+///
+/// Topics: `("paramoveride",)`
+/// Data: `(admin: Address, config_key: ConfigKey, new_value: u64)`
+pub fn admin_parameter_override(env: &Env, admin: &Address, config_key: &ConfigKey, new_value: u64) {
+    env.events().publish(
+        (symbol_short!("paramoveride"),),
+        (admin.clone(), config_key.clone(), new_value),
+    );
 }
