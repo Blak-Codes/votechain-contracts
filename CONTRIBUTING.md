@@ -7,6 +7,7 @@ Thank you for contributing! VoteChain is an open-source governance protocol buil
 ## Table of Contents
 
 - [Getting Started](#getting-started)
+- [Issue Triage Process](#issue-triage-process)
 - [Branch Protection Rules](#branch-protection-rules)
 - [Branching Strategy](#branching-strategy)
 - [Commit Messages](#commit-messages)
@@ -37,7 +38,67 @@ docker compose run --rm dev make test
 
 ---
 
-## Branch Protection Rules
+## Issue Triage Process
+
+To maintain clarity and prioritise work effectively, all new issues follow a standardised triage workflow.
+
+### Who triages?
+
+- **Maintainers** perform initial triage.
+- Triage should happen at least **weekly**.
+- New issues are triaged **within 3 days** of creation.
+
+### How to triage an issue
+
+1. **Review the issue** for completeness:
+   - Bug reports should include steps to reproduce and expected vs. actual behaviour.
+   - Feature requests should clearly state the motivation and acceptance criteria.
+   - If incomplete, request additional information using the relevant template.
+
+2. **Apply labels** using this taxonomy:
+
+   | Label | When to use |
+   | ----- | ----------- |
+   | `bug` | Unintended behaviour |
+   | `enhancement` | New feature or capability improvement |
+   | `documentation` | Docs, guides, or examples |
+   | `good first issue` | Simple, well-scoped task suitable for newcomers |
+   | `help wanted` | Needs community contribution; maintainers may not prioritise |
+   | `security` | Security-related issues (use private disclosure for vulnerabilities) |
+   | `question` | Request for information or clarification |
+   | `blocked` | Waiting on external dependency or decision |
+   | `critical` | Severely impacts functionality or security |
+   | `high` | Important; should be scheduled soon |
+   | `medium` | Standard priority |
+   | `low` | Nice to have; backlog |
+
+3. **Assign a priority label** (`critical`, `high`, `medium`, or `low`) based on impact and urgency.
+
+4. **Assign an owner** if you have capacity, or leave unassigned and add `help wanted`.
+
+### Response SLA expectations
+
+Response times and resolution targets by priority:
+
+| Priority | Response SLA | Resolution Target |
+| -------- | ------------ | ----------------- |
+| 🔴 Critical | 24 hours | 1 week |
+| 🟠 High | 72 hours | 2 weeks |
+| 🟡 Medium | 1 week | 1 month |
+| 🟢 Low | Best effort | Backlog |
+
+**Definition:**
+
+- **Response SLA:** Time for maintainer to acknowledge the issue, ask clarifying questions, or begin work.
+- **Resolution target:** Estimated time to merge a PR or close the issue.
+
+### Stale issues
+
+- Issues with no activity for **60 days** are marked with the `stale` label and a comment explaining the inactivity.
+- If no response within **30 days** of the stale warning, the issue is closed automatically.
+- Reopening is always possible if the original concern is still valid.
+
+---
 
 The `main` branch is protected. These rules are enforced via GitHub branch protection settings and cannot be bypassed by any contributor, including maintainers.
 
