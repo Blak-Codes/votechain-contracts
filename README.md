@@ -20,6 +20,7 @@ VoteChain enables DAOs, protocols, and communities to create proposals, cast tok
 - [Architecture](#architecture)
 - [Features](#features)
 - [Quick Start](#quick-start)
+- [Stellar Protocol Compatibility](#stellar-protocol-compatibility)
 - [Project Structure](#project-structure)
 - [Governance Contract Reference](#governance-contract-reference)
 - [Token Contract Reference](#token-contract-reference)
@@ -221,6 +222,16 @@ rustup target list | grep wasm32-unknown-unknown
 # Run a quick test
 make test 2>&1 | head -20
 ```
+
+---
+
+## Stellar Protocol Compatibility
+
+VoteChain maintains compatibility across Stellar protocol versions. Check the [Compatibility Matrix](docs/compatibility.md) for:
+- VoteChain version × Stellar Protocol version compatibility
+- Required SDK versions
+- Breaking changes and migration paths
+- Known limitations
 
 ---
 
