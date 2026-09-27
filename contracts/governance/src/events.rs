@@ -20,15 +20,15 @@ use soroban_sdk::{symbol_short, Address, Env};
 /// All events are published via `env.events().publish(topics, data)`.
 /// Topics are a tuple of `(Symbol, ...)` for efficient off-chain filtering.
 ///
-/// | Function      | Topic 0        | Topic 1       | Data                              |
-/// |---------------|----------------|---------------|-----------------------------------|
-/// | initialize    | `"init"`       | —             | `admin: Address`                  |
-/// | create_proposal | `"created"`  | `id: u64`     | `proposer: Address`               |
-/// | cast_vote     | `"vote"`       | `id: u64`     | `(voter, vote, weight)`           |
-/// | finalise      | `"final"`      | `id: u64`     | `state: ProposalState`            |
-/// | execute       | `"executed"`   | `id: u64`     | `()`                              |
-/// | cancel        | `"cancelled"`  | `id: u64`     | `()`                              |
-/// | update_quorum | `"qupdate"`    | `id: u64`     | `new_quorum: i128`                |
+/// | Function      | Topic 0        | Topic 1       | Data                                          |
+/// |---------------|----------------|---------------|-----------------------------------------------|
+/// | initialize    | `"init"`       | —             | `admin: Address`                              |
+/// | create_proposal | `"created"`  | `id: u64`     | `proposer: Address`                           |
+/// | cast_vote     | `"vote"`       | `id: u64`     | `(voter, vote, weight, balance_snapshot)`     |
+/// | finalise      | `"final"`      | `id: u64`     | `state: ProposalState`                        |
+/// | execute       | `"executed"`   | `id: u64`     | `()`                                          |
+/// | cancel        | `"cancelled"`  | `id: u64`     | `()`                                          |
+/// | update_quorum | `"qupdate"`    | `id: u64`     | `new_quorum: i128`                            |
 /// | transfer_admin | `"admxfer"`   | —             | `(old_admin, new_admin): (Address, Address)` |
 /// Emits an `init` event when the contract is initialised.
 ///
@@ -51,11 +51,11 @@ pub fn proposal_created(env: &Env, id: u64, proposer: &Address) {
 /// Emits a `vote` event when a vote is cast.
 ///
 /// Topics: `("vote", id)`  
-/// Data: `(voter: Address, vote: Vote, weight: i128)`
-pub fn vote_cast(env: &Env, id: u64, voter: &Address, vote: &Vote, weight: i128) {
+/// Data: `(voter: Address, vote: Vote, weight: i128, balance_snapshot: i128)`
+pub fn vote_cast(env: &Env, id: u64, voter: &Address, vote: &Vote, weight: i128, balance_snapshot: i128) {
     env.events().publish(
         (symbol_short!("vote"), id),
-        (voter.clone(), vote.clone(), weight),
+        (voter.clone(), vote.clone(), weight, balance_snapshot),
     );
 }
 
