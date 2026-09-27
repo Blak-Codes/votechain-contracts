@@ -12,6 +12,7 @@ Thank you for contributing! VoteChain is an open-source governance protocol buil
 - [Branching Strategy](#branching-strategy)
 - [Commit Messages](#commit-messages)
 - [Development Workflow](#development-workflow)
+- [Architecture Decision Records](#architecture-decision-records)
 - [Pull Request Process](#pull-request-process)
 - [Code Review Expectations](#code-review-expectations)
 - [Reporting Bugs](#reporting-bugs)
@@ -267,6 +268,49 @@ Every contribution to the contract crates must follow these invariants or the CI
 - Every new public function requires at least one test in `test.rs`.
 - `cargo fmt --check` and `cargo clippy -- -D warnings` must pass cleanly.
 - `cargo audit` must report zero advisories.
+
+---
+
+## Architecture Decision Records
+
+An Architecture Decision Record (ADR) captures a significant choice made during development — the context, what was decided, and the trade-offs accepted. ADRs live in [`docs/adr/`](docs/adr/).
+
+### When an ADR is required
+
+Write an ADR whenever a change involves **significant trade-offs** that future contributors should understand. Use this rule of thumb:
+
+> If a reviewer might ask "why did you do it this way?" and the answer is longer than a commit message, write an ADR.
+
+Concrete triggers:
+- Choosing between two or more viable technical approaches
+- Changing a core data structure, storage tier, or contract interface
+- Introducing a new external dependency or protocol
+- Deprecating or replacing an existing architectural pattern
+- Any security-sensitive design choice
+
+You do **not** need an ADR for: bug fixes, test additions, documentation updates, tooling bumps, or refactors that preserve observable behavior.
+
+### ADR template
+
+Copy [`docs/adr/TEMPLATE.md`](docs/adr/TEMPLATE.md) and name your file `ADR-NNN-short-title.md`, where `NNN` is the next sequential number. Fill in all sections and set the status to `Proposed`.
+
+### Review process
+
+1. Open a PR with the new ADR file and a summary of the decision in the PR description.
+2. Link the ADR from [`docs/adr/README.md`](docs/adr/README.md).
+3. Discussion happens in the PR. Once consensus is reached, update the status to `Accepted` before merging.
+4. If a later decision supersedes this ADR, mark the old one `Superseded by ADR-NNN` rather than deleting it.
+
+### Examples
+
+Two good ADRs to read for reference:
+
+- **Simple decision — [ADR-001: Use Stellar Soroban as the smart contract platform](docs/adr/ADR-001-stellar-soroban-platform.md):** A concise record selecting the contract platform with clear reasoning and consequences. Good template for single-choice decisions.
+- **Complex decision — [ADR-006: Instance vs persistent storage tier assignment](docs/adr/ADR-006-instance-vs-persistent-storage.md):** Documents a nuanced trade-off with performance, cost, and correctness implications. Good template for decisions with multiple interacting factors.
+
+### CI warning for large contract changes
+
+A CI check warns when a PR adds a new function larger than 50 lines to `contracts/governance/src/lib.rs` without including a new ADR file. This is a **warning, not a failure** — it is a prompt to consider whether the change warrants documentation, not a hard block. If the change genuinely does not need an ADR, note that in the PR description.
 
 ---
 
