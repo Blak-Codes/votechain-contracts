@@ -103,6 +103,8 @@ pub enum ContractError {
     CannotRemoveLastToken = 41,
     /// 42 – Weight multiplier must be greater than zero
     InvalidWeightMultiplier = 42,
+    /// 43 – Batch size exceeds the allowed maximum of MAX_BATCH_VOTERS (50)
+    BatchTooLarge = 43,
 }
 
 /// Different types of proposals the governance contract supports.
