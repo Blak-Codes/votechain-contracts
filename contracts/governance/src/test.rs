@@ -3863,3 +3863,163 @@ fn test_multi_asset_voting_parameter_change_interaction() {
 }
 
 // ── end Issue #119 ─────────────────────────────────────────────────────────────
+
+// ── Issue #53: get_config() view function ─────────────────────────────────────
+
+/// get_config() returns all configuration fields in a single call.
+#[test]
+fn test_get_config_returns_all_fields() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let token_id = {
+        let id = env.register(votechain_token::TokenContract, ());
+        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
+        id
+    };
+    let gov = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov);
+    client.initialize(
+        &admin,
+        &token_id,
+        &1_000_i128,  // min_proposal_balance
+        &300_u64,     // proposal_cooldown
+        &60_u64,      // min_duration
+        &2_592_000_u64, // max_duration
+        &true,        // restrict_admin_vote
+        &86_400_u64,  // timelock_duration
+        &0_u64,       // max_active_proposals (use default)
+    );
+
+    let cfg = client.get_config();
+    assert_eq!(cfg.admin, admin);
+    assert_eq!(cfg.voting_token, token_id);
+    assert_eq!(cfg.min_proposal_balance, 1_000);
+    assert_eq!(cfg.proposal_cooldown, 300);
+    assert!(cfg.restrict_admin_vote);
+    assert!(!cfg.paused);
+    assert_eq!(cfg.timelock_duration, 86_400);
+    assert_eq!(cfg.min_duration, 60);
+    assert_eq!(cfg.max_duration, 2_592_000);
+    assert_eq!(cfg.version, (1, 0, 0));
+}
+
+/// get_config() reflects paused state correctly.
+#[test]
+fn test_get_config_reflects_paused_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let token_id = {
+        let id = env.register(votechain_token::TokenContract, ());
+        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
+        id
+    };
+    let gov = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov);
+    client.initialize(
+        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
+    );
+
+    assert!(!client.get_config().paused);
+    client.pause(&admin);
+    assert!(client.get_config().paused);
+    client.unpause(&admin);
+    assert!(!client.get_config().paused);
+}
+
+// ── end Issue #53 ─────────────────────────────────────────────────────────────
+
+// ── Issue #54: MIN_TRANSFER_WINDOW enforcement ────────────────────────────────
+
+/// propose_admin_transfer with window_secs exactly at MIN_TRANSFER_WINDOW (300s) is accepted.
+#[test]
+fn test_propose_admin_transfer_at_min_window_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token_id = {
+        let id = env.register(votechain_token::TokenContract, ());
+        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
+        id
+    };
+    let gov = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov);
+    client.initialize(
+        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
+    );
+
+    // Exactly 300 seconds — must succeed.
+    client.propose_admin_transfer(&admin, &new_admin, &300_u64);
+}
+
+/// propose_admin_transfer with window_secs below MIN_TRANSFER_WINDOW (e.g. 299s) must revert.
+#[test]
+#[should_panic]
+fn test_propose_admin_transfer_below_min_window_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token_id = {
+        let id = env.register(votechain_token::TokenContract, ());
+        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
+        id
+    };
+    let gov = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov);
+    client.initialize(
+        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
+    );
+
+    // 299 seconds is below the 300-second minimum — must panic.
+    client.propose_admin_transfer(&admin, &new_admin, &299_u64);
+}
+
+/// propose_admin_transfer with window_secs = 0 uses 48 h default (above minimum) — accepted.
+#[test]
+fn test_propose_admin_transfer_default_window_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token_id = {
+        let id = env.register(votechain_token::TokenContract, ());
+        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
+        id
+    };
+    let gov = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov);
+    client.initialize(
+        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
+    );
+
+    // 0 means use default (172_800 s = 48 h), which is well above minimum.
+    client.propose_admin_transfer(&admin, &new_admin, &0_u64);
+}
+
+/// propose_admin_transfer with window_secs = 1 (well below minimum) must revert.
+#[test]
+#[should_panic]
+fn test_propose_admin_transfer_1s_window_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token_id = {
+        let id = env.register(votechain_token::TokenContract, ());
+        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
+        id
+    };
+    let gov = env.register(GovernanceContract, ());
+    let client = GovernanceContractClient::new(&env, &gov);
+    client.initialize(
+        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
+    );
+
+    // 1 second is far below the 300-second minimum — must panic.
+    client.propose_admin_transfer(&admin, &new_admin, &1_u64);
+}
+
+// ── end Issue #54 ─────────────────────────────────────────────────────────────
