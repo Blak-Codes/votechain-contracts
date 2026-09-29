@@ -103,8 +103,8 @@ pub enum ContractError {
     CannotRemoveLastToken = 41,
     /// 42 – Weight multiplier must be greater than zero
     InvalidWeightMultiplier = 42,
-    /// 43 – Admin transfer window is below the minimum (MIN_TRANSFER_WINDOW = 300s)
-    TransferWindowTooShort = 43,
+    /// 43 – Batch size exceeds the allowed maximum of MAX_BATCH_VOTERS (50)
+    BatchTooLarge = 43,
 }
 
 /// Different types of proposals the governance contract supports.

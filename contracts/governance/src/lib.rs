@@ -46,6 +46,8 @@ use storage::{
 
 const MAX_TITLE_LEN: u32 = 128;
 const MAX_DESC_LEN: u32 = 1024;
+// Maximum number of voters allowed in a single get_votes batch call.
+const MAX_BATCH_VOTERS: u32 = 50;
 
 /// Minimum admin transfer window in seconds (5 minutes).
 ///
@@ -494,6 +496,44 @@ impl GovernanceContract {
     pub fn get_vote(env: Env, proposal_id: u64, voter: Address) -> Option<VoteRecord> {
         get_vote_record(&env, proposal_id, &voter)
     }
+
+    /// Returns vote records for a batch of voters on a single proposal.
+    ///
+    /// Designed for indexers that need to retrieve many vote records in one
+    /// RPC call rather than issuing one call per voter.
+    ///
+    /// # Parameters
+    /// - `proposal_id` — the proposal to query; must exist.
+    /// - `voters` — list of addresses to look up; capped at [`MAX_BATCH_VOTERS`] (50).
+    ///
+    /// # Returns
+    /// A `Vec<Option<VoteRecord>>` parallel to `voters`:
+    /// - `Some(record)` if the address has voted on this proposal.
+    /// - `None` if the address has not voted (no error is returned for non-voters).
+    ///
+    /// # Errors
+    /// - [`ContractError::ProposalNotFound`] if `proposal_id` does not exist.
+    /// - [`ContractError::BatchTooLarge`] if `voters.len() > MAX_BATCH_VOTERS` (50).
+    pub fn get_votes(
+        env: Env,
+        proposal_id: u64,
+        voters: Vec<Address>,
+    ) -> Result<Vec<Option<VoteRecord>>, ContractError> {
+        // Fail fast: verify the proposal exists before any storage reads.
+        load_proposal(&env, proposal_id)?;
+
+        // Enforce the batch size cap to bound per-call gas consumption.
+        if voters.len() > MAX_BATCH_VOTERS {
+            return Err(ContractError::BatchTooLarge);
+        }
+
+        let mut results: Vec<Option<VoteRecord>> = Vec::new(&env);
+        for voter in voters.iter() {
+            results.push_back(get_vote_record(&env, proposal_id, &voter));
+        }
+        Ok(results)
+    }
+
 
     /// Finalises a proposal after its voting period has ended.
     ///

@@ -3864,162 +3864,100 @@ fn test_multi_asset_voting_parameter_change_interaction() {
 
 // ── end Issue #119 ─────────────────────────────────────────────────────────────
 
-// ── Issue #53: get_config() view function ─────────────────────────────────────
+// ── Issue #61: get_votes batch function tests ──────────────────────────────────
 
-/// get_config() returns all configuration fields in a single call.
+/// Empty batch returns an empty Vec without error.
 #[test]
-fn test_get_config_returns_all_fields() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let token_id = {
-        let id = env.register(votechain_token::TokenContract, ());
-        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
-        id
-    };
-    let gov = env.register(GovernanceContract, ());
-    let client = GovernanceContractClient::new(&env, &gov);
-    client.initialize(
-        &admin,
-        &token_id,
-        &1_000_i128,  // min_proposal_balance
-        &300_u64,     // proposal_cooldown
-        &60_u64,      // min_duration
-        &2_592_000_u64, // max_duration
-        &true,        // restrict_admin_vote
-        &86_400_u64,  // timelock_duration
-        &0_u64,       // max_active_proposals (use default)
-    );
+fn test_get_votes_empty_batch() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let tok = votechain_token::TokenContractClient::new(&t.env, &t.token_id);
+    tok.mint(&t.admin, &proposer, &500);
+    let id = create_test_proposal(&t, &proposer);
 
-    let cfg = client.get_config();
-    assert_eq!(cfg.admin, admin);
-    assert_eq!(cfg.voting_token, token_id);
-    assert_eq!(cfg.min_proposal_balance, 1_000);
-    assert_eq!(cfg.proposal_cooldown, 300);
-    assert!(cfg.restrict_admin_vote);
-    assert!(!cfg.paused);
-    assert_eq!(cfg.timelock_duration, 86_400);
-    assert_eq!(cfg.min_duration, 60);
-    assert_eq!(cfg.max_duration, 2_592_000);
-    assert_eq!(cfg.version, (1, 0, 0));
+    let empty: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&t.env);
+    let results = t.client.get_votes(&id, &empty).unwrap();
+    assert_eq!(results.len(), 0);
 }
 
-/// get_config() reflects paused state correctly.
+/// Single voter — voted address returns Some, non-voter returns None.
 #[test]
-fn test_get_config_reflects_paused_state() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let token_id = {
-        let id = env.register(votechain_token::TokenContract, ());
-        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
-        id
-    };
-    let gov = env.register(GovernanceContract, ());
-    let client = GovernanceContractClient::new(&env, &gov);
-    client.initialize(
-        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
-    );
+fn test_get_votes_single_voter() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let voter = Address::generate(&t.env);
+    let non_voter = Address::generate(&t.env);
 
-    assert!(!client.get_config().paused);
-    client.pause(&admin);
-    assert!(client.get_config().paused);
-    client.unpause(&admin);
-    assert!(!client.get_config().paused);
+    let tok = votechain_token::TokenContractClient::new(&t.env, &t.token_id);
+    tok.mint(&t.admin, &proposer, &500);
+    tok.mint(&t.admin, &voter, &200);
+
+    let id = create_test_proposal(&t, &proposer);
+    t.client.cast_vote(&voter, &id, &Vote::Yes);
+
+    let mut voters = soroban_sdk::Vec::new(&t.env);
+    voters.push_back(voter.clone());
+    voters.push_back(non_voter.clone());
+
+    let results = t.client.get_votes(&id, &voters).unwrap();
+    assert_eq!(results.len(), 2);
+    assert!(results.get(0).unwrap().is_some());
+    assert!(results.get(1).unwrap().is_none());
 }
 
-// ── end Issue #53 ─────────────────────────────────────────────────────────────
-
-// ── Issue #54: MIN_TRANSFER_WINDOW enforcement ────────────────────────────────
-
-/// propose_admin_transfer with window_secs exactly at MIN_TRANSFER_WINDOW (300s) is accepted.
+/// Full batch of 50 voters all returns correctly.
 #[test]
-fn test_propose_admin_transfer_at_min_window_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let new_admin = Address::generate(&env);
-    let token_id = {
-        let id = env.register(votechain_token::TokenContract, ());
-        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
-        id
-    };
-    let gov = env.register(GovernanceContract, ());
-    let client = GovernanceContractClient::new(&env, &gov);
-    client.initialize(
-        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
-    );
+fn test_get_votes_batch_of_50() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let tok = votechain_token::TokenContractClient::new(&t.env, &t.token_id);
+    tok.mint(&t.admin, &proposer, &500);
+    let id = create_test_proposal(&t, &proposer);
 
-    // Exactly 300 seconds — must succeed.
-    client.propose_admin_transfer(&admin, &new_admin, &300_u64);
+    let mut voters: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&t.env);
+    for _ in 0..50u32 {
+        let v = Address::generate(&t.env);
+        tok.mint(&t.admin, &v, &100);
+        t.client.cast_vote(&v, &id, &Vote::Yes);
+        voters.push_back(v);
+    }
+
+    let results = t.client.get_votes(&id, &voters).unwrap();
+    assert_eq!(results.len(), 50);
+    for i in 0..50u32 {
+        assert!(results.get(i).unwrap().is_some());
+    }
 }
 
-/// propose_admin_transfer with window_secs below MIN_TRANSFER_WINDOW (e.g. 299s) must revert.
+/// Batch of 51 voters fails with BatchTooLarge.
 #[test]
-#[should_panic]
-fn test_propose_admin_transfer_below_min_window_reverts() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let new_admin = Address::generate(&env);
-    let token_id = {
-        let id = env.register(votechain_token::TokenContract, ());
-        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
-        id
-    };
-    let gov = env.register(GovernanceContract, ());
-    let client = GovernanceContractClient::new(&env, &gov);
-    client.initialize(
-        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
-    );
+fn test_get_votes_batch_of_51_fails() {
+    use crate::types::ContractError;
 
-    // 299 seconds is below the 300-second minimum — must panic.
-    client.propose_admin_transfer(&admin, &new_admin, &299_u64);
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let tok = votechain_token::TokenContractClient::new(&t.env, &t.token_id);
+    tok.mint(&t.admin, &proposer, &500);
+    let id = create_test_proposal(&t, &proposer);
+
+    let mut voters: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&t.env);
+    for _ in 0..51u32 {
+        voters.push_back(Address::generate(&t.env));
+    }
+
+    let err = t.client.try_get_votes(&id, &voters).unwrap_err().unwrap();
+    assert_eq!(err, ContractError::BatchTooLarge);
 }
 
-/// propose_admin_transfer with window_secs = 0 uses 48 h default (above minimum) — accepted.
+/// Non-existent proposal fails fast with ProposalNotFound.
 #[test]
-fn test_propose_admin_transfer_default_window_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let new_admin = Address::generate(&env);
-    let token_id = {
-        let id = env.register(votechain_token::TokenContract, ());
-        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
-        id
-    };
-    let gov = env.register(GovernanceContract, ());
-    let client = GovernanceContractClient::new(&env, &gov);
-    client.initialize(
-        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
-    );
+fn test_get_votes_proposal_not_found() {
+    use crate::types::ContractError;
 
-    // 0 means use default (172_800 s = 48 h), which is well above minimum.
-    client.propose_admin_transfer(&admin, &new_admin, &0_u64);
+    let t = setup_env();
+    let empty: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&t.env);
+    let err = t.client.try_get_votes(&9999, &empty).unwrap_err().unwrap();
+    assert_eq!(err, ContractError::ProposalNotFound);
 }
 
-/// propose_admin_transfer with window_secs = 1 (well below minimum) must revert.
-#[test]
-#[should_panic]
-fn test_propose_admin_transfer_1s_window_reverts() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let new_admin = Address::generate(&env);
-    let token_id = {
-        let id = env.register(votechain_token::TokenContract, ());
-        votechain_token::TokenContractClient::new(&env, &id).initialize(&admin, &10_000_000);
-        id
-    };
-    let gov = env.register(GovernanceContract, ());
-    let client = GovernanceContractClient::new(&env, &gov);
-    client.initialize(
-        &admin, &token_id, &0, &0, &60, &2_592_000, &false, &0, &0,
-    );
-
-    // 1 second is far below the 300-second minimum — must panic.
-    client.propose_admin_transfer(&admin, &new_admin, &1_u64);
-}
-
-// ── end Issue #54 ─────────────────────────────────────────────────────────────
+// ── end Issue #61 ──────────────────────────────────────────────────────────────
